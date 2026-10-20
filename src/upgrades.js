@@ -20,12 +20,16 @@ export const UPGRADES = [
   { id: 'reach1', branch: 'Reach', name: 'Long Arms', cost: 60, req: [], desc: '+1 m pickup reach' },
   { id: 'reach2', branch: 'Reach', name: 'Grabber Pole', cost: 180, req: ['reach1'], desc: '+1 m pickup reach' },
 
+  { id: 'throw1', branch: 'Throw', name: 'Strong Arm', cost: 60, req: [], desc: 'Throw items twice as far' },
+  { id: 'throw2', branch: 'Throw', name: 'Trick Shot', cost: 220, req: ['throw1'], desc: 'Throw an item into its own shelf spot to stock it (+3 bonus)' },
+  { id: 'throw3', branch: 'Throw', name: 'Cannon Arm', cost: 400, req: ['throw2'], desc: 'Throw items three times as far' },
+
   { id: 'crew1', branch: 'Crew', name: 'Call In a Coworker', cost: 250, req: [], desc: 'Jess clocks in and shelves items for you, 1 at a time' },
   { id: 'crew2', branch: 'Crew', name: 'Jess Gets a Basket', cost: 450, req: ['crew1'], desc: 'Jess carries 2 items per trip' },
   { id: 'crew3', branch: 'Crew', name: 'Jess Goes Full-Time', cost: 700, req: ['crew2'], desc: 'Jess carries 3 items and walks faster' },
 ];
 
-export const BRANCHES = ['Hands', 'Legs', 'Cart', 'Scanner', 'Reach', 'Crew'];
+export const BRANCHES = ['Hands', 'Legs', 'Cart', 'Scanner', 'Reach', 'Throw', 'Crew'];
 
 export function effects(owned) {
   const has = (id) => owned.has(id);
@@ -39,6 +43,8 @@ export function effects(owned) {
     radar: has('scan2'),
     reach: 3 + (has('reach1') ? 1 : 0) + (has('reach2') ? 1 : 0),
     grabber: has('grabber'),
+    throwSpeed: has('throw3') ? 11 : has('throw1') ? 7 : 3.5,
+    trickShot: has('throw2'),
     crew: has('crew3') ? 3 : has('crew2') ? 2 : has('crew1') ? 1 : 0,
   };
 }

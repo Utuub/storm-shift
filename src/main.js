@@ -11,7 +11,8 @@ import { HUD, fmtTime } from './hud.js';
 import { Carry } from './carry.js';
 import { UpgradeMenu, effects, cheapestAvailable } from './upgrades.js';
 import { drawSlotTag } from './textures.js';
-import { initAudio, setVolumes, sfx } from './audio.js';
+import { initAudio, setVolumes, sfx, musicStart, musicStop, duckMusic } from './audio.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { loadSettings, saveSettings, DEFAULTS, ACTIONS, keyLabel } from './settings.js';
 import { readSave, writeSave, applySave, clearSave } from './save.js';
 import { Coworker } from './coworker.js';
@@ -36,6 +37,11 @@ const canvas = renderer.domElement;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1d2026);
+// soft studio reflections on everything (shiny floor, cans, bottles, glass)
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.35;
+scene.fog = new THREE.Fog(0x2a2d33, 50, 120);
 const camera = new THREE.PerspectiveCamera(settings.fov, innerWidth / innerHeight, 0.05, 150);
 scene.add(camera);
 
@@ -318,7 +324,7 @@ function buy(u) {
   game.eff = effects(game.owned);
   sfx.cash();
   if (u.id === 'cart') {
-    cart.spawn(new THREE.Vector3(store.office.x + 2.2, 0, store.office.z + 1.6), Math.PI);
+    cart.spawn(new THREE.Vector3(store.office.door.x + 2, 0, store.office.door.z + 0.3), Math.PI);
   }
   cart.cap = game.eff.cartCap;
   cart.updateFill();
@@ -331,7 +337,7 @@ function buy(u) {
 
 function syncCoworker() {
   if (!game.eff.crew) return;
-  coworker.spawn(new THREE.Vector3(store.office.x + 1.5, 0, store.office.z + 2));
+  coworker.spawn(store.office.door);
   coworker.setLevel(game.eff.crew);
 }
 
@@ -346,7 +352,7 @@ let optionsFrom = 'pause';
 let waitingBind = null;
 const SLIDERS = {
   sensitivity: (v) => `${v.toFixed(2)}x`, fov: (v) => `${v}°`, renderScale: (v) => `${Math.round(v * 100)}%`,
-  master: (v) => `${Math.round(v * 100)}`, sfx: (v) => `${Math.round(v * 100)}`, ambient: (v) => `${Math.round(v * 100)}`,
+  master: (v) => `${Math.round(v * 100)}`, sfx: (v) => `${Math.round(v * 100)}`, ambient: (v) => `${Math.round(v * 100)}`, music: (v) => `${Math.round(v * 100)}`,
 };
 
 function openOptions(tab, from) {
@@ -378,7 +384,7 @@ let saveTimer = null;
 function settingChanged(k) {
   if (VIDEO.has(k)) applySettings();
   else {
-    setVolumes({ master: settings.master, sfx: settings.sfx, ambient: settings.ambient });
+    setVolumes({ master: settings.master, sfx: settings.sfx, ambient: settings.ambient, music: settings.music });
     if (k === 'showFps' && !settings.showFps) hud.fps(false);
     if (k === 'fullscreen' && !settings.fullscreen && document.fullscreenElement) document.exitFullscreen();
   }
@@ -427,7 +433,7 @@ function applySettings() {
     renderer.shadowMap.needsUpdate = true;
     applySettings.done = true;
   }
-  setVolumes({ master: settings.master, sfx: settings.sfx, ambient: settings.ambient });
+  setVolumes({ master: settings.master, sfx: settings.sfx, ambient: settings.ambient, music: settings.music });
   if (!settings.showFps) hud.fps(false);
   saveSettings(settings);
   if (game.state === 'play') carry.refreshHeld();
@@ -468,7 +474,8 @@ addEventListener('keydown', (e) => {
   if (st === 'menu' && isBind(e, 'interact')) { closeShop(); return; }
   if (st !== 'play') return;
   if (isBind(e, 'interact')) carry.use();
-  else if (isBind(e, 'drop')) carry.drop();
+  else if (isBind(e, 'drop')) carry.drop(game.eff);
+  else if (/^Digit[1-9]$/.test(e.code)) carry.select(+e.code.slice(5) - 1);
   else if (isBind(e, 'cart')) carry.toggleCart();
   else if (isBind(e, 'checklist')) { hud.toggleChecklist(); hud.renderChecklist(); }
   else if (DEBUG && e.code === 'F9') debugShelve();
@@ -478,8 +485,11 @@ addEventListener('keydown', (e) => {
 addEventListener('mousedown', (e) => {
   if (!locked() || game.state !== 'play') return;
   if (e.button === 0) carry.click(game.eff);
-  else if (e.button === 2) carry.drop();
+  else if (e.button === 2) carry.drop(game.eff);
 });
+addEventListener('wheel', (e) => {
+  if (locked() && game.state === 'play' && Math.abs(e.deltaY) > 0) carry.cycle(e.deltaY > 0 ? 1 : -1);
+}, { passive: true });
 addEventListener('contextmenu', (e) => e.preventDefault());
 addEventListener('mousemove', (e) => {
   if (locked() && (game.state === 'play' || game.state === 'storm')) player.look(e.movementX, e.movementY);
@@ -507,6 +517,8 @@ let t = 0;
 let autosaveAt = 60;
 let fpsFrames = 0, fpsT = 0;
 const wakers = [];
+let musicOn = false, ducked = false;
+player.onStep = (land) => sfx.step(land);
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -529,6 +541,7 @@ function frame(now) {
       });
       cart.step(player, store.bounds);
       world.step();
+      if (st === 'play') carry.checkTrickShots(game.eff);
       acc -= STEP;
       steps++;
     }
@@ -542,7 +555,25 @@ function frame(now) {
   if (st === 'storm') storm.update(dt);
   items.sync(store.bounds, rescue);
   cart.syncMesh(acc / STEP);
-  player.updateCamera(acc / STEP, dt);
+  if (st === 'title') {
+    // slow flyover of the store behind the title screen
+    const a = t * 0.06;
+    camera.position.set(Math.sin(a) * 13, 3.8, store.heap.cz + Math.cos(a) * 11);
+    camera.lookAt(0, 1, store.heap.cz);
+  } else {
+    player.updateCamera(acc / STEP, dt);
+    // sprinting widens the view a little
+    const fov = settings.fov + (player.sprinting ? 7 : 0);
+    if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 8); camera.updateProjectionMatrix(); }
+    carry.sway(player, t);
+  }
+
+  // music plays everywhere except the tornado and the win screen; quieter in menus
+  const wantMusic = st !== 'storm' && st !== 'win';
+  if (wantMusic && !musicOn) musicOn = musicStart(); // no-op until audio is unlocked by a click
+  else if (!wantMusic && musicOn) { musicStop(); musicOn = false; }
+  const wantDuck = st !== 'play';
+  if (wantDuck !== ducked) { ducked = wantDuck; duckMusic(wantDuck); }
 
   if (st === 'play') {
     game.time += dt;

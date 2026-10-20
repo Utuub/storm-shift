@@ -189,7 +189,9 @@ export function signTexture(title, sub, color) {
   }
   ctx.fillText(title, 256, 52);
   if (sub) {
-    ctx.font = 'bold 20px Arial, sans-serif';
+    let fs = 20;
+    ctx.font = `bold ${fs}px Arial, sans-serif`;
+    while (ctx.measureText(sub).width > 490 && fs > 11) { fs--; ctx.font = `bold ${fs}px Arial, sans-serif`; }
     ctx.fillText(sub, 256, 114);
   }
   return tex(c);
@@ -207,6 +209,24 @@ export function textTexture(text, { w = 256, h = 64, bg = 'rgba(0,0,0,0.6)', fg 
   ctx.fillText(text, w / 2, h / 2 + 2);
   const t = tex(c);
   t.userData = { canvas: c };
+  return t;
+}
+
+export function ceilingTexture() {
+  const c = canvas(256, 256);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#d8d6d0';
+  ctx.fillRect(0, 0, 256, 256);
+  // speckled acoustic tile
+  for (let i = 0; i < 1400; i++) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.08})`;
+    ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+  }
+  ctx.strokeStyle = '#a9a7a1';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(0, 0, 256, 256);
+  const t = tex(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
 

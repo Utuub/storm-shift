@@ -26,7 +26,7 @@ export class GM {
     part(new THREE.BoxGeometry(0.1, 0.05, 0.01), m(0x2e7d4f), 0.13, 1.38, 0.145); // name badge
 
     const tag = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: textTexture('DALE · GM', { w: 256, h: 64, bg: 'rgba(46,125,79,0.9)' }), depthTest: false,
+      map: textTexture('DALE · GM', { w: 256, h: 64, bg: 'rgba(46,125,79,0.9)' }),
     }));
     tag.scale.set(0.8, 0.2, 1);
     tag.position.set(0, 2.15, 0);

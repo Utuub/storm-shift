@@ -4,9 +4,11 @@ let ctx = null;
 let master = null;
 let sfxBus = null;
 let ambBus = null;
+let musicBus = null;
 let windNodes = null;
 let humNodes = null;
-const vol = { master: 0.8, sfx: 0.8, ambient: 0.6 };
+const vol = { master: 0.8, sfx: 0.8, ambient: 0.6, music: 0.45 };
+let duck = 1;
 
 export function initAudio() {
   if (ctx) { ctx.resume(); return; }
@@ -14,8 +16,10 @@ export function initAudio() {
   master = ctx.createGain();
   sfxBus = ctx.createGain();
   ambBus = ctx.createGain();
+  musicBus = ctx.createGain();
   sfxBus.connect(master);
   ambBus.connect(master);
+  musicBus.connect(master);
   master.connect(ctx.destination);
   setVolumes(vol);
 }
@@ -26,6 +30,13 @@ export function setVolumes(v) {
   master.gain.value = vol.master * 0.6;
   sfxBus.gain.value = vol.sfx;
   ambBus.gain.value = vol.ambient;
+  musicBus.gain.setTargetAtTime(vol.music * duck * 0.5, ctx.currentTime, 0.15);
+}
+
+// Quieter music while paused / in menus.
+export function duckMusic(on) {
+  duck = on ? 0.35 : 1;
+  setVolumes({});
 }
 
 function tone(freq, dur, type = 'sine', v = 0.3, slideTo = null, delay = 0) {
@@ -63,6 +74,21 @@ export const sfx = {
   complete() { [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.3, 'triangle', 0.18, null, i * 0.09)); },
   win() { [523, 659, 784, 1046, 784, 1046, 1318].forEach((f, i) => tone(f, 0.4, 'triangle', 0.2, null, i * 0.14)); },
   blip() { tone(660, 0.05, 'square', 0.06); },
+  step(land = false) {
+    if (!ctx) return;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer();
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = land ? 500 : 700 + Math.random() * 300;
+    const g = ctx.createGain();
+    const t = ctx.currentTime;
+    g.gain.setValueAtTime(land ? 0.5 : 0.16, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + (land ? 0.18 : 0.08));
+    src.connect(f).connect(g).connect(sfxBus);
+    src.start(t, Math.random() * 2);
+    src.stop(t + 0.2);
+  },
 
   thunder() {
     if (!ctx) return;
@@ -135,3 +161,98 @@ export const sfx = {
     }
   },
 };
+
+// ---------- soundtrack ----------
+// A laid-back grocery-store groove, synthesized live: Cmaj7 - Am7 - Dm7 - G7,
+// electric-piano chords, walking bass, a little melody, soft drums.
+const BPM = 96;
+const STEP = 60 / BPM / 4;                 // one 16th note
+const CHORDS = [
+  [48, [60, 64, 67, 71]],                  // Cmaj7
+  [45, [57, 60, 64, 67]],                  // Am7
+  [50, [62, 65, 69, 72]],                  // Dm7
+  [43, [55, 59, 62, 65]],                  // G7
+];
+const SCALE = [60, 62, 64, 67, 69, 72, 74, 76];
+const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+let music = null;
+
+function note(freq, t, dur, type, v, attack = 0.01, dest = musicBus) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(v, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(dest);
+  o.start(t);
+  o.stop(t + dur + 0.05);
+}
+
+function drum(t, kind) {
+  if (kind === 'kick') {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.setValueAtTime(130, t);
+    o.frequency.exponentialRampToValueAtTime(45, t + 0.15);
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    o.connect(g).connect(musicBus);
+    o.start(t); o.stop(t + 0.22);
+    return;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuffer();
+  const f = ctx.createBiquadFilter();
+  f.type = kind === 'hat' ? 'highpass' : 'bandpass';
+  f.frequency.value = kind === 'hat' ? 7000 : 1800;
+  const g = ctx.createGain();
+  const len = kind === 'hat' ? 0.04 : 0.14;
+  g.gain.setValueAtTime(kind === 'hat' ? 0.06 : 0.18, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + len);
+  src.connect(f).connect(g).connect(musicBus);
+  src.start(t, Math.random() * 2);
+  src.stop(t + len + 0.02);
+}
+
+// fixed pseudo-random melody so the loop is the same every time
+const MELODY = (() => {
+  let s = 7;
+  const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  return Array.from({ length: 64 }, (_, i) => (i % 2 === 0 && r() < 0.42 ? SCALE[Math.floor(r() * SCALE.length)] : null));
+})();
+
+function playStep(i, t) {
+  const bar = Math.floor(i / 16) % 4;
+  const s = i % 16;
+  const [root, chord] = CHORDS[bar];
+  if (s === 0 || s === 10) chord.forEach((m, k) => note(hz(m), t + k * 0.012, STEP * 6, 'sine', 0.05, 0.02));
+  if (s === 0 || s === 10) chord.forEach((m) => note(hz(m) * 2, t, STEP * 3, 'triangle', 0.012, 0.01));
+  const bassLine = [0, null, null, 7, null, null, 12, null, 0, null, 10, null, 7, null, 5, null];
+  if (bassLine[s] != null) note(hz(root + bassLine[s] - 12), t, STEP * 1.8, 'triangle', 0.22, 0.005);
+  const m = MELODY[(i % 64)];
+  if (m && bar !== 3) note(hz(m), t, STEP * 2.2, 'square', 0.018, 0.005);
+  if (s === 0 || s === 8) drum(t, 'kick');
+  if (s === 4 || s === 12) drum(t, 'snare');
+  if (s % 2 === 1) drum(t, 'hat');
+}
+
+export function musicStart() {
+  if (!ctx) return false;
+  if (music) return true;
+  music = { next: ctx.currentTime + 0.1, i: 0 };
+  music.timer = setInterval(() => {
+    while (music && music.next < ctx.currentTime + 0.25) {
+      playStep(music.i++, music.next);
+      music.next += STEP;
+    }
+  }, 60);
+  return true;
+}
+
+export function musicStop() {
+  if (!music) return;
+  clearInterval(music.timer);
+  music = null;
+}

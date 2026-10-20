@@ -141,6 +141,7 @@ kbd.mouse { background: #d6e6ff; }
 
 /* ---------- HUD ---------- */
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+#vignette { position: fixed; inset: 0; pointer-events: none; z-index: 4; background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.38) 100%); }
 .hud-panel {
   position: absolute; background: linear-gradient(rgba(35,42,68,0.92), rgba(26,31,53,0.92)); border: 3px solid var(--edge);
   border-radius: 14px; padding: 10px 14px; box-shadow: 0 5px 0 rgba(11,14,26,0.85);
@@ -188,7 +189,11 @@ kbd.mouse { background: #d6e6ff; }
 .hslots { display: flex; gap: 5px; padding: 6px; background: rgba(11,14,26,0.75); border: 3px solid var(--edge); border-radius: 12px; }
 .hslot { width: 34px; height: 34px; border-radius: 8px; background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.12); display: grid; place-items: center; }
 .hslot.full { background: rgba(255,255,255,0.18); border-color: var(--gold); }
+.hslot { position: relative; }
 .hslot span { width: 20px; height: 20px; border-radius: 5px; border: 2px solid rgba(0,0,0,0.35); }
+.hslot em { position: absolute; left: 3px; top: 0; font: 400 10px/1.2 var(--display); font-style: normal; color: rgba(255,255,255,0.7); }
+.hslot.sel { border-color: #fff; background: rgba(255,197,61,0.45); transform: translateY(-4px) scale(1.08); box-shadow: 0 0 10px rgba(255,197,61,0.8); }
+.hand-label small { font-family: var(--body); font-size: 11px; opacity: 0.7; margin-left: 6px; }
 #hud-cart { padding: 3px 12px; border-radius: 9px; background: var(--gold); color: #3a2400; border: 3px solid var(--edge); font-size: 14px; }
 #hud-cart i { font-style: normal; opacity: 0.75; }
 

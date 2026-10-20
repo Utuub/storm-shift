@@ -14,6 +14,7 @@ const _q = new THREE.Quaternion();
 const _s = new THREE.Quaternion();
 const _p = new THREE.Vector3();
 const _fq = new THREE.Quaternion();
+const LAND_V = new THREE.Vector3(0, -1.5, 0);
 
 // How an item ends up lying in the pile: which face is down, any spin, and a
 // little tilt so the pile looks messy. y = half its height in that pose.
@@ -54,9 +55,9 @@ function halfExtents(p, q) {
   return [0, 1, 2].map((r) => Math.abs(e[r]) * h[0] + Math.abs(e[3 + r]) * h[1] + Math.abs(e[6 + r]) * h[2]);
 }
 
-// Drop every item onto a height map one at a time, so they land on top of
-// whatever is already there. Items aim for the middle, so it piles up into
-// a messy mound.
+// Plan where each item lands: drop it onto a height map so it sits on top of
+// whatever is already there, aiming for the middle so it heaps up. Physics
+// then settles the heap for real once items land.
 const HF = 0.1;
 function buildPile(items, heap, rand) {
   const hf = new Map();
@@ -66,7 +67,7 @@ function buildPile(items, heap, rand) {
     const [ex, ey, ez] = halfExtents(item.p, pose.q);
     let best = null;
     for (let tries = 0; tries < 4; tries++) {
-      const r = heap.R * Math.pow(rand(), 1.25); // >1 bunches items toward the middle
+      const r = heap.R * Math.pow(rand(), 1.1); // >1 bunches items toward the middle
       const a = rand() * Math.PI * 2;
       const x = heap.cx + Math.cos(a) * r, z = heap.cz + Math.sin(a) * r;
       const i0 = Math.floor((x - ex) / HF), i1 = Math.floor((x + ex) / HF);
@@ -74,10 +75,9 @@ function buildPile(items, heap, rand) {
       let base = 0;
       for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) base = Math.max(base, hf.get(key(i, j)) || 0);
       if (!best || base < best.base) best = { x, z, base, i0, i1, j0, j1 };
-      if (base < 1.3) break; // keep the pile below eye level
+      if (base < 1.5) break; // keep the top reachable
     }
-    // settle a little into the gaps below so it doesn't look stacked
-    const y = best.base * 0.92 + ey;
+    const y = best.base + ey + 0.01;
     const top = y + ey;
     for (let i = best.i0; i <= best.i1; i++) for (let j = best.j0; j <= best.j1; j++) {
       hf.set(key(i, j), Math.max(hf.get(key(i, j)) || 0, top));
@@ -188,7 +188,9 @@ export class Storm {
       if (tau >= f.T) {
         f.done = true;
         this.landed++;
-        this.items.freezeAt(f.item, f.to, f.toQ);
+        // hand it to real physics so it settles into the pile; it freezes
+        // into a resting collider once it stops moving (Items.manage)
+        this.items.makeLoose(f.item, f.to, f.toQ, LAND_V, null, true);
         continue;
       }
       const k = tau / f.T;
@@ -238,7 +240,7 @@ export class Storm {
   }
 
   finish() {
-    for (const f of this.flights) if (!f.done) this.items.freezeAt(f.item, f.to, f.toQ);
+    for (const f of this.flights) if (!f.done) this.items.makeLoose(f.item, f.to, f.toQ, LAND_V, null, true);
     this.flights = [];
     this.active = false;
     this.funnel.visible = false;

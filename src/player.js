@@ -31,6 +31,9 @@ export class Player {
     this.grounded = true;
     this.crouch = 0;          // 0 standing .. 1 crouched, eased for a smooth camera
     this.jumpQueued = false;
+    this.bob = 0;             // walk cycle phase for head bob + footsteps
+    this.bobAmt = 0;
+    this.onStep = null;
     this.keys = new Set();
     this.shake = 0;
     this.ignoreHandle = -1;
@@ -122,8 +125,18 @@ export class Player {
       this.ignoreHandle >= 0 ? this.filter : undefined,
     );
     const m = this.controller.computedMovement();
+    const wasGrounded = this.grounded;
     this.grounded = this.controller.computedGrounded();
     if (this.grounded && this.vy < 0) this.vy = 0;
+    if (this.grounded && !wasGrounded) this.onStep?.(true);
+    // walk cycle: a footstep every half cycle
+    const moved = Math.hypot(m.x, m.z);
+    if (this.grounded && moved > 0.001) {
+      const before = Math.floor(this.bob / Math.PI);
+      this.bob += moved * 3.2;
+      if (Math.floor(this.bob / Math.PI) !== before) this.onStep?.(false);
+    }
+    this.bobAmt += ((this.grounded && moved > 0.001 ? 1 : 0) - this.bobAmt) * Math.min(1, dt * 8);
     this.pos.x += m.x; this.pos.y += m.y; this.pos.z += m.z;
     if (this.pos.y < -2) this.teleport(this.spawn, this.yaw);
     this.body.setNextKinematicTranslation({ x: this.pos.x, y: this.pos.y, z: this.pos.z });
@@ -134,6 +147,12 @@ export class Player {
     const c = this.camera;
     c.position.lerpVectors(this.prev, this.pos, alpha);
     c.position.y += EYE + (CROUCH_EYE - EYE) * this.crouch;
+    // head bob while walking
+    const k = this.bobAmt * (this.sprinting ? 1.4 : 1) * (1 - this.crouch * 0.6);
+    c.position.y += Math.abs(Math.sin(this.bob)) * 0.045 * k;
+    const side = Math.cos(this.bob) * 0.025 * k;
+    c.position.x += Math.cos(this.yaw) * side;
+    c.position.z -= Math.sin(this.yaw) * side;
     if (this.shake > 0) {
       c.position.x += (Math.random() - 0.5) * this.shake * 0.1;
       c.position.y += (Math.random() - 0.5) * this.shake * 0.07;

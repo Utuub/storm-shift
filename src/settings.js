@@ -20,6 +20,7 @@ export const DEFAULTS = {
   master: 0.8,
   sfx: 0.8,
   ambient: 0.6,
+  music: 0.45,
   binds: {
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft',
     jump: 'Space', crouch: 'KeyC', interact: 'KeyE', drop: 'KeyQ', cart: 'KeyF', checklist: 'Tab',

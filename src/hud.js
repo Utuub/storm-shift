@@ -49,16 +49,17 @@ export class HUD {
     setHTML(this.el.aimSub, sub);
   }
 
-  setHand(hand, cap, cart) {
+  setHand(hand, cap, cart, sel = hand.length - 1) {
     const slots = [];
     for (let i = 0; i < cap; i++) {
       const item = hand[i];
       slots.push(item
-        ? `<div class="hslot full" title="${item.p.name}"><span style="background:${item.p.color}"></span></div>`
+        ? `<div class="hslot full${i === sel ? ' sel' : ''}" title="${item.p.name}"><span style="background:${item.p.color}"></span><em>${i + 1}</em></div>`
         : '<div class="hslot"></div>');
     }
-    const top = hand[hand.length - 1];
-    this.el.hand.innerHTML = `<div class="hand-label">${top ? top.p.name : 'Empty hands'}</div><div class="hslots">${slots.join('')}</div>`;
+    const cur = hand[sel];
+    const hint = hand.length > 1 ? ' <small>scroll to switch</small>' : '';
+    this.el.hand.innerHTML = `<div class="hand-label">${cur ? cur.p.name + hint : 'Empty hands'}</div><div class="hslots">${slots.join('')}</div>`;
     this.el.cart.hidden = !cart.active;
     if (cart.active) this.el.cart.innerHTML = `<b>CART</b> ${cart.items.length}/${cart.cap}${cart.pushing ? ' <i>pushing</i>' : ''}`;
   }

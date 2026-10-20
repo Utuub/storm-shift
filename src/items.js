@@ -1,13 +1,22 @@
 import * as THREE from 'three';
 import { RAPIER, world, groups, G } from './physics.js';
 import { productTexture } from './textures.js';
-import { buildModel, hasLabel } from './models.js';
+import { buildModel, hasLabel, modelKey } from './models.js';
 
 function colliderDesc(shape) {
   const s = shape.size;
   if (shape.kind === 'box') return RAPIER.ColliderDesc.cuboid(s[0] / 2, s[1] / 2, s[2] / 2);
   if (shape.kind === 'cyl') return RAPIER.ColliderDesc.cylinder(s[1] / 2, s[0]);
   return RAPIER.ColliderDesc.ball(s[0]);
+}
+
+// Surface finish by package type: cans are metal, bottles are glossy, boxes are matte.
+function finish(p) {
+  const k = modelKey(p).split(':')[0];
+  if (['can', 'canLid'].includes(k)) return { roughness: 0.3, metalness: 0.45 };
+  if (['bottle', 'soda', 'flatBottle', 'jug', 'jar', 'spice'].includes(k)) return { roughness: 0.22, metalness: 0.05 };
+  if (['pillow'].includes(k)) return { roughness: 0.35, metalness: 0.1 };
+  return { roughness: 0.6, metalness: 0 };
 }
 
 const _m = new THREE.Matrix4();
@@ -38,7 +47,7 @@ export class Items {
     const plain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 });
     for (const p of products) {
       const material = hasLabel(p)
-        ? new THREE.MeshStandardMaterial({ map: productTexture(p), vertexColors: true, roughness: 0.55 })
+        ? new THREE.MeshStandardMaterial({ map: productTexture(p), vertexColors: true, ...finish(p) })
         : plain;
       p.material = material;
       p.geometry = buildModel(p);
@@ -87,19 +96,21 @@ export class Items {
     this.setMatrix(item, _p, _q);
   }
 
-  makeLoose(item, pos, quat, linvel, angvel) {
+  // pile = landing in the tornado pile: sticky and quick to settle, so the
+  // heap keeps its shape instead of sliding flat
+  makeLoose(item, pos, quat, linvel, angvel, pile = false) {
     this.removeBody(item);
     const desc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(pos.x, pos.y, pos.z)
       .setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w })
-      .setLinearDamping(0.25)
+      .setLinearDamping(pile ? 2.5 : 0.25)
       // round things need rolling resistance or they roll forever
-      .setAngularDamping(item.p.shape.kind === 'box' ? 0.5 : 2.5);
+      .setAngularDamping(pile ? 6 : item.p.shape.kind === 'box' ? 0.5 : 2.5);
     if (linvel) desc.setLinvel(linvel.x, linvel.y, linvel.z);
     if (angvel) desc.setAngvel({ x: angvel.x, y: angvel.y, z: angvel.z });
     const body = world.createRigidBody(desc);
     const col = world.createCollider(
-      colliderDesc(item.p.shape).setFriction(0.7).setRestitution(0.15).setDensity(0.8)
+      colliderDesc(item.p.shape).setFriction(pile ? 1.4 : 0.7).setRestitution(pile ? 0 : 0.15).setDensity(0.8)
         .setCollisionGroups(groups(G.ITEM)),
       body,
     );
@@ -108,6 +119,7 @@ export class Items {
     item.state = 'loose';
     item.rest = false;
     item.still = 0;
+    item.pile = pile;
     this.byHandle.set(col.handle, item);
     this.setMatrix(item, pos, quat);
   }
@@ -144,7 +156,7 @@ export class Items {
   }
 
   wake(item) {
-    this.makeLoose(item, item.restPos.clone(), item.restQuat.clone(), null, null);
+    this.makeLoose(item, item.restPos.clone(), item.restQuat.clone(), null, null, true);
   }
 
   removeBody(item) {
@@ -194,10 +206,11 @@ export class Items {
       }
       const v = item.body.linvel();
       const w = item.body.angvel();
+      const lim = item.pile ? 0.12 : 0.02; // pile items freeze as soon as they've mostly stopped
       const slow = item.body.isSleeping()
-        || (v.x * v.x + v.y * v.y + v.z * v.z < 0.02 && w.x * w.x + w.y * w.y + w.z * w.z < 2);
+        || (v.x * v.x + v.y * v.y + v.z * v.z < lim && w.x * w.x + w.y * w.y + w.z * w.z < (item.pile ? 6 : 2));
       item.still = slow ? item.still + 1 : 0;
-      if (item.still >= STILL_FRAMES) {
+      if (item.still >= (item.pile ? 6 : STILL_FRAMES)) {
         const t = item.body.translation();
         if (!near(t.x, t.z, FREEZE_R)) this.freeze(item);
       }

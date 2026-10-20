@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { addStaticBox, addSensorBox, G } from './physics.js';
-import { makeSlotTag, drawSlotTag, signTexture, floorTexture, textTexture } from './textures.js';
+import { makeSlotTag, drawSlotTag, signTexture, floorTexture, ceilingTexture, textTexture } from './textures.js';
 
 // Shelf geometry (meters)
 const GAP = 0.015;        // minimum space between items on a shelf
@@ -15,7 +15,7 @@ export const AISLE = 3.4;
 const PITCH = GW + AISLE;
 const Z0 = 0;             // center aisles start here and run toward +z
 const SIDE_WALK = 6;      // walkway between the gondolas and the wall coolers
-const HEAP_R = 4.6;       // radius of the tornado pile
+const HEAP_R = 3.3;       // radius of the tornado pile
 const FACES = 8;          // center gondola faces (4 double-sided gondolas)
 
 // How each kind of fixture is built. D = depth from the front edge to the
@@ -35,6 +35,41 @@ const WALL_SECTIONS = {
   back: [['Meat & Seafood', 'open'], ['Deli', 'open']],
 };
 const BAY_GAP = 0.12;
+
+function bulletinTexture() {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#b8895a';
+  ctx.fillRect(0, 0, 512, 256);
+  ctx.strokeStyle = '#6b4423';
+  ctx.lineWidth = 14;
+  ctx.strokeRect(0, 0, 512, 256);
+  const notes = [
+    ['#fff59d', 'SALES GOAL', 'Q4: +8%'], ['#ffffff', 'SCHEDULE', 'Close: YOU'], ['#b3e5fc', 'REMINDER', 'Check the|coolers!'],
+    ['#f8bbd0', 'EMPLOYEE', 'OF THE MONTH'], ['#c8e6c9', 'TORNADO', 'PLAN: ???'],
+  ];
+  notes.forEach(([bg, a, b], i) => {
+    const x = 30 + (i % 3) * 160 + (i > 2 ? 70 : 0), y = i > 2 ? 140 : 26;
+    ctx.save();
+    ctx.translate(x + 60, y + 45);
+    ctx.rotate((i % 2 ? 1 : -1) * 0.05);
+    ctx.fillStyle = bg;
+    ctx.fillRect(-60, -45, 120, 90);
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath(); ctx.arc(0, -36, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#222';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 15px Arial';
+    ctx.fillText(a, 0, -10);
+    ctx.font = '14px Arial';
+    b.split('|').forEach((l, j) => ctx.fillText(l, 0, 12 + j * 16));
+    ctx.restore();
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
 const runWidth = (p) => p.count * (p.fp.w + GAP);
 
@@ -140,13 +175,15 @@ export function buildStore(scene, sections) {
   // floor, ceiling, walls
   const ftex = floorTexture();
   ftex.repeat.set(W / 2.4, D / 2.4);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ map: ftex, roughness: 0.35, metalness: 0.05 }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ map: ftex, roughness: 0.22, metalness: 0.0 }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(0, 0, cz);
   floor.receiveShadow = true;
   scene.add(floor);
   addStaticBox(0, -0.5, cz, W / 2 + 2, 0.5, D / 2 + 2);
-  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ color: 0x3a3d42 }));
+  const ctex = ceilingTexture();
+  ctex.repeat.set(W / 1.2, D / 1.2);
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ map: ctex, roughness: 0.95 }));
   ceil.rotation.x = Math.PI / 2;
   ceil.position.set(0, WALL_H, cz);
   scene.add(ceil);
@@ -169,10 +206,11 @@ export function buildStore(scene, sections) {
   block(0.02, 0.35, D, bounds.xR - 0.01, 3.9, cz, 0x2e7d4f, false);
   block(W, 0.15, 0.02, 0, 0.075, bounds.zB - 0.01, 0x55606b, false);
 
+  const RW = 7.5; // office room width (built below)
   // front windows + locked doors
   const winGeo = [];
   for (let x = bounds.xL + 3; x < bounds.xR - 2; x += 4.2) {
-    if (Math.abs(x) < 2.5) continue;
+    if (Math.abs(x) < 2.5 || x < bounds.xL + RW + 1.8) continue;
     winGeo.push(new THREE.PlaneGeometry(3.4, 2.4).translate(x, 1.8, bounds.zF + 0.01));
   }
   scene.add(new THREE.Mesh(mergeGeometries(winGeo), mat.window));
@@ -192,12 +230,67 @@ export function buildStore(scene, sections) {
     block(0.06, 1.8, 0.06, kx - 0.35, 1.85, -10.1, 0x9aa4ae, false);
     block(0.4, 0.3, 0.04, kx - 0.35, 2.6, -10.1, 0x2e7d4f, false);
   }
-  const office = { x: bounds.xL + 4, z: bounds.zF + 3.6 };
-  block(2.4, 0.9, 0.9, office.x, 0.45, office.z, 0x7a5434);
-  block(0.5, 0.35, 0.05, office.x - 0.5, 1.08, office.z - 0.2, 0x2b2f3a, false);
-  const officeSign = new THREE.Mesh(new THREE.PlaneGeometry(3, 0.75),
-    new THREE.MeshBasicMaterial({ map: signTexture('OFFICE', 'GENERAL MANAGER', '#2e7d4f') }));
-  officeSign.position.set(office.x, 3.0, bounds.zF + 0.02);
+  // ---------- Dale's office: its own room in the front-left corner ----------
+  const RD = 6.5, WT = 0.15;
+  const ox0 = bounds.xL, ox1 = bounds.xL + RW, oz0 = bounds.zF, oz1 = bounds.zF + RD;
+  const WALLC = 0xd9d2c0;
+  const doorA = ox0 + 5.3, doorB = ox0 + 6.6;
+  const winA = ox0 + 1.0, winB = ox0 + 4.0;
+  // front wall (faces the store): solid, big window, solid, door, solid
+  block(winA - ox0, WALL_H, WT, (ox0 + winA) / 2, WALL_H / 2, oz1, WALLC);
+  block(winB - winA, 1.0, WT, (winA + winB) / 2, 0.5, oz1, WALLC, false);
+  block(winB - winA, WALL_H - 2.4, WT, (winA + winB) / 2, (WALL_H + 2.4) / 2, oz1, WALLC, false);
+  addStaticBox((winA + winB) / 2, WALL_H / 2, oz1, (winB - winA) / 2, WALL_H / 2, WT / 2); // the glass still blocks you
+  block(winB - winA, 1.4, 0.02, (winA + winB) / 2, 1.7, oz1, null, false, glass);
+  block(doorA - winB, WALL_H, WT, (winB + doorA) / 2, WALL_H / 2, oz1, WALLC);
+  block(doorB - doorA, WALL_H - 2.5, WT, (doorA + doorB) / 2, (WALL_H + 2.5) / 2, oz1, WALLC, false);
+  block(ox1 - doorB, WALL_H, WT, (doorB + ox1) / 2, WALL_H / 2, oz1, WALLC);
+  // door frame + open door swung inward
+  block(0.08, 2.5, WT + 0.06, doorA, 1.25, oz1, 0x5b4636, false);
+  block(0.08, 2.5, WT + 0.06, doorB, 1.25, oz1, 0x5b4636, false);
+  block(0.05, 2.4, 1.2, doorA + 0.06, 1.2, oz1 - 0.68, 0x8a6a4a, false); // swung open against the wall
+  // side wall
+  block(WT, WALL_H, RD, ox1, WALL_H / 2, (oz0 + oz1) / 2, WALLC);
+  // carpet
+  const carpet = new THREE.Mesh(new THREE.PlaneGeometry(RW, RD), new THREE.MeshStandardMaterial({ color: 0x3d4a5c, roughness: 1 }));
+  carpet.rotation.x = -Math.PI / 2;
+  carpet.position.set((ox0 + ox1) / 2, 0.006, (oz0 + oz1) / 2);
+  carpet.receiveShadow = true;
+  scene.add(carpet);
+  // desk, computer, chair
+  const office = { x: ox0 + 3.4, z: oz0 + 3.4, door: new THREE.Vector3((doorA + doorB) / 2, 0, oz1 + 1.4) };
+  block(2.4, 0.06, 1.0, office.x, 0.75, office.z, 0x6b4a2e);
+  block(2.3, 0.7, 0.05, office.x, 0.38, office.z + 0.45, 0x5a3e26);
+  block(0.05, 0.72, 0.95, office.x - 1.15, 0.36, office.z, 0x5a3e26);
+  block(0.05, 0.72, 0.95, office.x + 1.15, 0.36, office.z, 0x5a3e26);
+  addStaticBox(office.x, 0.45, office.z, 1.2, 0.45, 0.5);
+  block(0.62, 0.4, 0.04, office.x - 0.5, 1.05, office.z - 0.25, 0x1b1e24, false);
+  block(0.56, 0.32, 0.01, office.x - 0.5, 1.06, office.z - 0.225, 0x3a6ea8, false);
+  block(0.06, 0.18, 0.06, office.x - 0.5, 0.86, office.z - 0.27, 0x1b1e24, false);
+  block(0.45, 0.02, 0.15, office.x - 0.5, 0.79, office.z + 0.05, 0x2b2f36, false);
+  block(0.3, 0.04, 0.22, office.x + 0.6, 0.8, office.z, 0xf2f2f2, false); // paperwork
+  block(0.08, 0.1, 0.08, office.x + 0.2, 0.83, office.z - 0.1, 0xc0392b, false); // coffee mug
+  block(0.55, 0.08, 0.55, office.x, 0.5, office.z - 1.35, 0x2b2f36, false);
+  block(0.55, 0.65, 0.08, office.x, 0.85, office.z - 1.62, 0x2b2f36, false);
+  block(0.06, 0.45, 0.06, office.x, 0.24, office.z - 1.35, 0x8c949e, false);
+  // filing cabinets, shelf, plant, water cooler
+  for (const z of [oz0 + 0.9, oz0 + 1.6]) block(0.6, 1.3, 0.65, ox0 + 0.4, 0.65, z, 0x8c949e);
+  block(0.5, 1.9, 1.6, ox1 - 0.35, 0.95, oz0 + 2.5, 0x6b4a2e);
+  for (let i = 0; i < 4; i++) block(0.45, 0.03, 1.55, ox1 - 0.35, 0.3 + i * 0.45, oz0 + 2.5, 0x5a3e26, false);
+  block(0.4, 0.4, 0.4, ox1 - 0.6, 0.2, oz1 - 0.7, 0xa0522d);
+  block(0.5, 0.7, 0.5, ox1 - 0.6, 0.75, oz1 - 0.7, 0x3f8f3a, false);
+  block(0.35, 1.0, 0.35, ox0 + 0.4, 0.5, oz1 - 0.6, 0xe8eef2);
+  block(0.3, 0.4, 0.3, ox0 + 0.4, 1.2, oz1 - 0.6, 0x9ad0f0, false);
+  // ceiling light panel
+  block(2.2, 0.05, 1.0, office.x, WALL_H - 0.05, office.z, null, false, glow);
+  // bulletin board on the back wall
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), new THREE.MeshStandardMaterial({ map: bulletinTexture() }));
+  board.position.set(office.x, 1.9, oz0 + 0.02);
+  scene.add(board);
+  // signs outside
+  const officeSign = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6),
+    new THREE.MeshBasicMaterial({ map: signTexture('OFFICE', 'STAFF ONLY · GENERAL MANAGER', '#2e7d4f') }));
+  officeSign.position.set((doorA + doorB) / 2 - 0.3, 3.1, oz1 + WT / 2 + 0.01);
   scene.add(officeSign);
 
   // ---------- fixture runs ----------
@@ -327,6 +420,22 @@ export function buildStore(scene, sections) {
     if (Math.abs(c) > PLAZA / 2 && !centers.some((v) => Math.abs(v - c) < 0.5)) centers.push(c);
   });
   centers.sort((a, b) => a - b);
+
+  // hanging aisle signs listing what's down each aisle
+  const aisleSign = (x, title, sub) => {
+    const tex = signTexture(title, sub, '#1f5f3a');
+    for (const ry of [0, Math.PI]) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.65), new THREE.MeshBasicMaterial({ map: tex }));
+      m.position.set(x, 3.7, Z0 - 0.6);
+      m.rotation.y = ry;
+      m.position.z += ry ? -0.01 : 0.01;
+      scene.add(m);
+    }
+    block(0.03, WALL_H - 4.03, 0.03, x - 1.1, (WALL_H + 4.03) / 2, Z0 - 0.6, 0x8c949e, false);
+    block(0.03, WALL_H - 4.03, 0.03, x + 1.1, (WALL_H + 4.03) / 2, Z0 - 0.6, 0x8c949e, false);
+  };
+  const namesBy = (c) => faces.flatMap((f, i) => (Math.abs(aisleOf(gxs[Math.floor(i / 2)], i % 2 ? 1 : -1) - c) < 0.5 ? f.bays.map((b) => b.sec.name) : []));
+  centers.forEach((c, i) => aisleSign(c, `AISLE ${i + 1}`, namesBy(c).join(' · ')));
   faces.forEach((face, i) => {
     const g = Math.floor(i / 2);
     const side = i % 2 ? 1 : -1;
@@ -392,7 +501,8 @@ export function buildStore(scene, sections) {
 
   // navigation for the coworker: gondola footprints + walkways around them
   const nav = {
-    rects: gxs.map((x) => ({ x0: x - GW / 2 - 0.35, x1: x + GW / 2 + 0.35, z0: Z0 - 0.35, z1: Z0 + L + 0.35 })),
+    rects: [...gxs.map((x) => ({ x0: x - GW / 2 - 0.35, x1: x + GW / 2 + 0.35, z0: Z0 - 0.35, z1: Z0 + L + 0.35 })),
+      { x0: bounds.xL - 1, x1: bounds.xL + RW + 0.4, z0: bounds.zF - 1, z1: bounds.zF + RD + 0.4 }],
     front: Z0 - 1.6,
     back: Z0 + L + 1.6,
   };

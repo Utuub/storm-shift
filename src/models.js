@@ -21,13 +21,13 @@ const BY_NAME = {
   'Salmon Fillet': 'meat:fillet',
   'Sliced Turkey': 'deli', 'Honey Ham': 'deli', 'Genoa Salami': 'deli', 'Roast Beef': 'deli',
   'Provolone': 'deli', 'Pepper Jack': 'cheese', 'Sliced Swiss': 'cheese', 'Flour Tortillas': 'tortilla',
-  'Thick Cut Bacon': 'box', 'Puppy Pads': 'box', 'Large Eggs': 'eggs',
+  'Thick Cut Bacon': 'box', 'Puppy Pads': 'box', 'Large Eggs': 'box',
   'Rice Cakes': 'roll', 'Paper Cups': 'cups',
 };
 
 const BY_SHAPE = {
   ball_s: 'apple', ball_m: 'apple', ball_l: 'melon', bunch: 'banana', jug: 'jug', carton: 'carton',
-  carton_s: 'carton', stick: 'box', eggs: 'eggs', pouch: 'pillow', slices: 'cheese', tub: 'tub',
+  carton_s: 'carton', stick: 'box', eggs: 'box', pouch: 'pillow', slices: 'cheese', tub: 'tub',
   tub_l: 'tub', pizza: 'box', bag_s: 'pillow', box_m: 'box', box_s: 'box', box_long: 'box',
   can: 'can', can_s: 'can', can_l: 'canLid', can_tall: 'can', loaf: 'loaf', buns: 'buns', jar: 'jar',
   jar_l: 'jar', bottle: 'bottle', bottle_s: 'bottle', bottle_l: 'soda', bottle_f: 'flatBottle',
@@ -37,8 +37,9 @@ const BY_SHAPE = {
 
 export const modelKey = (p) => BY_NAME[p.name] || BY_SHAPE[p.shapeKey] || 'box';
 
-// Loose produce has no package, so it needs no label texture.
-const NO_LABEL = new Set(['apple', 'orange', 'citrus', 'tomato', 'potato', 'onion', 'avocado', 'peach', 'melon', 'banana']);
+// Fresh food (no package) needs no label texture.
+const NO_LABEL = new Set(['apple', 'orange', 'citrus', 'tomato', 'potato', 'onion', 'avocado', 'peach', 'melon', 'banana',
+  'loaf', 'buns', 'croissant', 'muffin', 'chicken', 'deli', 'cheese', 'tortilla', 'meat', 'water6']);
 export const hasLabel = (p) => !NO_LABEL.has(modelKey(p));
 
 // ---------- helpers ----------
@@ -74,7 +75,7 @@ const box = (w, h, d, ws = 1, hs = 1, ds = 1) => new THREE.BoxGeometry(w, h, d, 
 // open label sleeves start at the back so the label art's center faces +z
 const sleeve = (r, h, seg = 14) => new THREE.CylinderGeometry(r, r, h, seg, 1, true, Math.PI);
 const cyl = (rt, rb, h, seg = 14) => new THREE.CylinderGeometry(rt, rb, h, seg);
-const sphere = (r, ws = 12, hs = 9) => new THREE.SphereGeometry(r, ws, hs);
+const sphere = (r, ws = 12, hs = 9, ...rest) => new THREE.SphereGeometry(r, ws, hs, ...rest);
 const lathe = (pts, seg = 14) => new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), seg, Math.PI);
 
 // Puff a box out into a pillow (chip bags, pouches).
@@ -282,7 +283,6 @@ const B = {
       parts.push(part(at(lathe([[0, 0], [r, 0], [r, h * 0.7], [r * 0.45, h * 0.85], [r * 0.4, h * 0.95]], 10), x, -h / 2, z), C(0xb8dcf2)));
       parts.push(part(at(cyl(r * 0.42, r * 0.42, h * 0.06, 8), x, h / 2 - h * 0.03, z), C(0x2a6ae8)));
     }
-    parts.push(part(at(box(w * 1.01, h * 0.3, d * 1.01), 0, -h * 0.12, 0), null, true));
     return parts;
   },
   roll(w, h, d, c) {
@@ -309,96 +309,100 @@ const B = {
   },
   plates: (w, h, d) => [part(cyl(w / 2, w / 2, h, 20), C(0xf6f6f0)), part(sleeve(w / 2 * 1.02, h * 0.5, 20), null, true)],
 
+  // ---- fresh food: just the food, no packaging ----
   loaf(w, h, d, c) {
     const crust = c;
-    const top = new THREE.CylinderGeometry(w / 2, w / 2, d, 12, 1, false, Math.PI / 2, Math.PI)
-      .rotateX(Math.PI / 2).scale(1, (h * 0.45) / (w / 2), 1).translate(0, h * 0.05, 0);
-    return [
-      part(at(box(w, h * 0.55, d), 0, -h * 0.225, 0), crust),
-      part(top, shade(crust, 0.04)),
-      part(at(box(w * 1.03, h * 0.62, d * 0.24), 0, -h * 0.1, d * 0.05), null, true),
-      part(at(cyl(w * 0.06, w * 0.18, d * 0.08, 6).rotateX(Math.PI / 2), 0, 0, -d * 0.5), shade(crust, -0.15)),
-    ];
+    const top = new THREE.CylinderGeometry(w / 2, w / 2, d * 0.96, 14, 1, false, Math.PI / 2, Math.PI)
+      .rotateX(Math.PI / 2).scale(1, (h * 0.5) / (w / 2), 1).translate(0, 0, 0);
+    const parts = [part(at(box(w, h * 0.5, d * 0.96), 0, -h * 0.25, 0), crust), part(top, shade(crust, 0.05))];
+    // score marks across the top crust
+    for (let i = 0; i < 3; i++) parts.push(part(at(box(w * 0.7, 0.006, d * 0.05).rotateY(0.3), 0, h * 0.49, (i - 1) * d * 0.25), shade(crust, -0.12)));
+    return parts;
   },
   buns(w, h, d, c, p) {
-    const parts = [part(at(box(w, h * 0.45, d), 0, -h * 0.275, 0), null, true)];
     const bun = p.name.includes('Bagel') ? C(0xc8905a) : C(0xd9a35a);
+    const parts = [];
     const r = Math.min(w / 4, d / 6) * 0.98;
     for (let i = 0; i < 2; i++) for (let j = 0; j < 3; j++) {
-      parts.push(part(at(sphere(r, 10, 7).scale(1, (h * 0.5) / r, 1), (i - 0.5) * w / 2, -h * 0.05, (j - 1) * d / 3), bun));
+      const x = (i - 0.5) * w / 2, z = (j - 1) * d / 3;
+      if (p.name.includes('Bagel')) {
+        parts.push(part(at(new THREE.TorusGeometry(r * 0.65, r * 0.33, 7, 14).rotateX(Math.PI / 2).scale(1, (h * 0.5) / (r * 0.66), 1), x, -h * 0.2, z), bun));
+      } else {
+        parts.push(part(at(sphere(r, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, h / r, 1), x, -h / 2, z), bun));
+        parts.push(part(at(cyl(r, r, h * 0.08, 12), x, -h / 2 + h * 0.04, z), shade(bun, 0.12)));
+      }
     }
     return parts;
   },
   croissant(w, h, d) {
-    const parts = [part(at(box(w, h * 0.1, d), 0, -h * 0.45, 0), C(0x2a2a2a)),
-      part(at(box(w * 0.5, h * 0.1, 0.004), 0, -h * 0.45, d / 2), null, true)];
+    const parts = [];
     for (let i = 0; i < 3; i++) {
-      const t = new THREE.TorusGeometry(d * 0.2, h * 0.28, 7, 10, Math.PI * 1.1).rotateX(Math.PI / 2).rotateY(i * 0.4);
-      parts.push(part(at(t, (i - 1) * w * 0.3, -h * 0.1, 0), C(0xd8953a)));
+      const t = new THREE.TorusGeometry(d * 0.22, h * 0.42, 8, 12, Math.PI * 1.1).rotateX(Math.PI / 2).rotateY(i * 0.5);
+      parts.push(part(at(t, (i - 1) * w * 0.3, 0, 0), C(i % 2 ? 0xc98530 : 0xd8953a)));
     }
     return parts;
   },
   muffin(w, h, d) {
-    const parts = [part(at(box(w, h * 0.1, d), 0, -h * 0.45, 0), C(0x2a2a2a)),
-      part(at(box(w * 0.5, h * 0.1, 0.004), 0, -h * 0.45, d / 2), null, true)];
+    const parts = [];
     const r = Math.min(w, d) / 4 * 0.95;
     for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
       const x = (i - 0.5) * w / 2, z = (j - 0.5) * d / 2;
-      parts.push(part(at(cyl(r, r * 0.75, h * 0.4, 10), x, -h * 0.2, z), C(0xe8dcc0)));
-      parts.push(part(at(sphere(r * 1.15, 10, 6).scale(1, 0.75, 1), x, h * 0.05, z), C(0xa8743a)));
-      for (let b = 0; b < 3; b++) parts.push(part(at(sphere(r * 0.18, 5, 4), x + (b - 1) * r * 0.5, h * 0.05 + r * 0.7, z + (b % 2) * r * 0.3), C(0x3a2a6a)));
+      parts.push(part(at(cyl(r, r * 0.75, h * 0.5, 12), x, -h * 0.25, z), C(0xe8dcc0)));
+      parts.push(part(at(sphere(r * 1.15, 12, 7, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, (h * 0.5) / (r * 1.15), 1), x, 0, z), C(0xa8743a)));
+      for (let b = 0; b < 4; b++) parts.push(part(at(sphere(r * 0.16, 5, 4), x + Math.cos(b * 1.7) * r * 0.55, h * 0.3, z + Math.sin(b * 1.7) * r * 0.55), C(0x3a2a6a)));
     }
     return parts;
   },
   chicken(w, h, d) {
     const gold = C(0xb8742a), dark = C(0x8a4f1a);
     return [
-      part(at(box(w, h * 0.12, d), 0, -h * 0.44, 0), C(0x1e1e1e)),
-      part(at(box(w * 0.45, h * 0.12, 0.004), 0, -h * 0.44, d / 2), null, true),
-      part(at(sphere(1, 14, 10).scale(w * 0.34, h * 0.4, d * 0.4), 0, -h * 0.02, -d * 0.02), gold),
-      part(at(cyl(w * 0.07, w * 0.04, d * 0.3, 8).rotateX(1.25).rotateZ(0.35), -w * 0.18, -h * 0.05, d * 0.28), dark),
-      part(at(cyl(w * 0.07, w * 0.04, d * 0.3, 8).rotateX(1.25).rotateZ(-0.35), w * 0.18, -h * 0.05, d * 0.28), dark),
-      part(at(sphere(w * 0.1, 8, 6).scale(1.2, 0.8, 1), -w * 0.34, h * 0.02, -d * 0.05), dark),
-      part(at(sphere(w * 0.1, 8, 6).scale(1.2, 0.8, 1), w * 0.34, h * 0.02, -d * 0.05), dark),
+      part(at(sphere(1, 16, 12).scale(w * 0.38, h * 0.48, d * 0.44), 0, 0, -d * 0.02), gold),
+      part(at(cyl(w * 0.08, w * 0.045, d * 0.34, 8).rotateX(1.25).rotateZ(0.35), -w * 0.2, -h * 0.12, d * 0.3), dark),
+      part(at(cyl(w * 0.08, w * 0.045, d * 0.34, 8).rotateX(1.25).rotateZ(-0.35), w * 0.2, -h * 0.12, d * 0.3), dark),
+      part(at(sphere(w * 0.11, 8, 6).scale(1.2, 0.8, 1), -w * 0.38, h * 0.0, -d * 0.05), dark),
+      part(at(sphere(w * 0.11, 8, 6).scale(1.2, 0.8, 1), w * 0.38, h * 0.0, -d * 0.05), dark),
     ];
   },
   deli(w, h, d, c) {
-    const parts = [part(at(box(w, h * 0.2, d), 0, -h * 0.4, 0), C(0xe8e8e8))];
-    const r = Math.min(w, d) / 2 * 0.9;
-    for (let i = 0; i < 4; i++) parts.push(part(at(cyl(r, r, h * 0.16, 16), (i - 1.5) * 0.004, -h * 0.22 + i * h * 0.17, 0), i % 2 ? shade(c, 0.05) : c));
-    parts.push(part(at(box(w * 0.5, h * 0.25, 0.004), 0, -h * 0.35, d / 2), null, true));
+    // a fanned stack of round slices
+    const parts = [];
+    const r = Math.min(w, d) / 2 * 0.95;
+    const n = 6;
+    for (let i = 0; i < n; i++) parts.push(part(at(cyl(r, r, h / n * 0.9, 18), Math.sin(i) * r * 0.04, -h / 2 + (i + 0.5) * h / n, Math.cos(i) * r * 0.04), i % 2 ? shade(c, 0.05) : c));
     return parts;
   },
   cheese(w, h, d, c) {
     const parts = [];
-    for (let i = 0; i < 4; i++) parts.push(part(at(box(w * 0.92, h * 0.2, d * 0.92).rotateY(i * 0.08), 0, -h * 0.38 + i * h * 0.22, 0), i % 2 ? shade(c, -0.04) : c));
-    parts.push(part(at(box(w * 0.55, h * 0.4, 0.004), 0, -h * 0.1, d / 2), null, true));
+    const n = 5;
+    for (let i = 0; i < n; i++) parts.push(part(at(box(w * 0.94, h / n * 0.9, d * 0.94).rotateY((i - 2) * 0.06), 0, -h / 2 + (i + 0.5) * h / n, 0), i % 2 ? shade(c, -0.04) : c));
     return parts;
   },
-  tortilla: (w, h, d, c) => [part(cyl(w / 2, w / 2, h, 20), c), part(at(box(w * 0.6, h * 0.6, 0.004), 0, 0, w / 2 * 0.85), null, true)],
-
+  tortilla(w, h, d, c, p, rand) {
+    const parts = [];
+    const n = 6;
+    for (let i = 0; i < n; i++) parts.push(part(at(jitter(cyl(w / 2, w / 2, h / n * 0.9, 20), 0.03, rand), 0, -h / 2 + (i + 0.5) * h / n, 0), i % 2 ? shade(c, -0.03) : c));
+    return parts;
+  },
   meat(w, h, d, c, p, rand, style) {
-    const parts = [part(at(box(w, h * 0.3, d), 0, -h * 0.35, 0), style === 'fillet' ? C(0x1e1e1e) : C(0xf2f2ee))];
-    const top = -h * 0.2;
+    const parts = [];
     if (style === 'ground') {
-      parts.push(part(jitter(sphere(1, 12, 8).scale(w * 0.42, h * 0.55, d * 0.4), 0.12, rand).translate(0, top, 0), c));
+      parts.push(part(jitter(sphere(1, 14, 9, 0, Math.PI * 2, 0, Math.PI / 2).scale(w * 0.46, h, d * 0.44), 0.1, rand).translate(0, -h / 2, 0), c));
     } else if (style === 'steak') {
-      parts.push(part(jitter(cyl(1, 1, 1, 14).scale(w * 0.44, h * 0.4, d * 0.4), 0.1, rand).translate(0, top + h * 0.12, 0), c));
-      parts.push(part(at(new THREE.TorusGeometry(w * 0.4, h * 0.08, 4, 14, Math.PI).rotateX(Math.PI / 2).scale(1, 1, d / w), 0, top + h * 0.2, 0), C(0xf3e1cf)));
+      parts.push(part(jitter(cyl(1, 1, 1, 16).scale(w * 0.46, h * 0.8, d * 0.44), 0.1, rand).translate(0, 0, 0), c));
+      parts.push(part(at(new THREE.TorusGeometry(w * 0.42, h * 0.2, 5, 16, Math.PI).rotateX(Math.PI / 2).scale(1, 1, d / w), 0, 0, 0), C(0xf3e1cf)));
     } else if (style === 'chops') {
-      for (const x of [-0.22, 0.22]) {
-        parts.push(part(jitter(cyl(1, 1, 1, 10).scale(w * 0.22, h * 0.3, d * 0.38), 0.12, rand).translate(x * w, top + h * 0.08, 0), c));
-        parts.push(part(at(box(w * 0.04, h * 0.32, d * 0.3), x * w + w * 0.12, top + h * 0.08, 0), C(0xf5ecdf)));
+      for (const x of [-0.23, 0.23]) {
+        parts.push(part(jitter(cyl(1, 1, 1, 12).scale(w * 0.23, h * 0.8, d * 0.44), 0.12, rand).translate(x * w, 0, 0), c));
+        parts.push(part(at(box(w * 0.05, h * 0.82, d * 0.36), x * w + w * 0.13, 0, 0), C(0xf5ecdf)));
       }
     } else if (style === 'fillet') {
-      parts.push(part(at(box(w * 0.85, h * 0.4, d * 0.6), 0, top + h * 0.08, 0), c));
-      for (let i = 0; i < 4; i++) parts.push(part(at(box(0.004, h * 0.41, d * 0.58), (i - 1.5) * w * 0.18, top + h * 0.08, 0), C(0xf8c8a8)));
+      parts.push(part(jitter(box(w * 0.92, h * 0.85, d * 0.66, 4, 1, 3), 0.05, rand), c));
+      for (let i = 0; i < 5; i++) parts.push(part(at(box(0.005, h * 0.86, d * 0.64).rotateY(0.25), (i - 2) * w * 0.17, 0, 0), C(0xf8d2b8)));
     } else {
-      for (const [x, z] of [[-0.24, -0.1], [0, 0.12], [0.24, -0.08]]) {
-        parts.push(part(jitter(sphere(1, 10, 7).scale(w * 0.17, h * 0.4, d * 0.3), 0.15, rand).translate(x * w, top, z * d), c));
+      for (const [x, z] of [[-0.25, -0.12], [0, 0.14], [0.25, -0.1]]) {
+        parts.push(part(jitter(sphere(1, 12, 8).scale(w * 0.19, h * 0.5, d * 0.32), 0.15, rand).translate(x * w, 0, z * d), c));
       }
     }
-    parts.push(part(at(box(w * 0.35, h * 0.25, 0.004), w * 0.25, -h * 0.35, d / 2), null, true));
     return parts;
   },
 };

@@ -45,6 +45,7 @@ export class Carry {
 
   reset() {
     this.hand = [];
+    this.sel = 0;
     this.target = null;
     this.items.setHover(null);
     this.slotBox.visible = false;
@@ -134,6 +135,7 @@ export class Carry {
       if (this.hand.length < eff.carry) {
         this.items.take(item, 'held');
         this.hand.push(item);
+        this.sel = this.hand.length - 1;
       } else if (this.cartAccepts()) {
         this.items.take(item, 'cart');
         this.cart.items.push(item);
@@ -182,7 +184,7 @@ export class Carry {
       sfx.buzz();
       this.hud.flash('bad');
       this.hud.popup('WRONG SPOT!', 'bad');
-      const top = this.hand[this.hand.length - 1];
+      const top = this.selected;
       if (top) this.hud.notice(`That's the <b>${p.name}</b> spot. You're holding <b>${top.p.name}</b>.`, 'bad');
       return;
     }
@@ -229,16 +231,59 @@ export class Carry {
     if (g.shelved === TOTAL_ITEMS) this.onWin();
   }
 
-  drop() {
-    const item = this.hand.pop();
+  // The item you have selected (scroll wheel / number keys cycle it).
+  get selected() { return this.hand[this.sel] || null; }
+
+  select(i) {
+    if (!this.hand.length) return;
+    const n = this.hand.length;
+    this.sel = ((i % n) + n) % n;
+    sfx.click();
+    this.refreshHeld();
+  }
+
+  cycle(dir) { this.select((this.sel ?? 0) + dir); }
+
+  // Throw the selected item. Throw upgrades make it go farther; with Trick
+  // Shot, landing it in its own shelf spot stocks it (see checkTrickShots).
+  drop(eff) {
+    const item = this.selected;
     if (!item) return;
+    this.hand.splice(this.sel, 1);
     this.camera.getWorldPosition(_o);
     this.camera.getWorldDirection(_d);
     _o.addScaledVector(_d, 0.6);
     _q.setFromEuler(_e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3));
-    this.items.makeLoose(item, _o, _q, _d.clone().multiplyScalar(3.5).add(new THREE.Vector3(0, 1, 0)), null);
+    const speed = eff?.throwSpeed ?? 3.5;
+    // a gentle lob for a plain toss; upgraded throws fly where you aim
+    this.items.makeLoose(item, _o, _q, _d.clone().multiplyScalar(speed).add(new THREE.Vector3(0, speed > 4 ? 0.3 : 1, 0)), null);
+    item.thrownAt = performance.now();
     sfx.drop();
     this.refreshHeld();
+  }
+
+  // Thrown items that fly into their own shelf spot get stocked (Trick Shot upgrade).
+  checkTrickShots(eff) {
+    if (!eff.trickShot) return;
+    const now = performance.now();
+    for (const item of this.items.all) {
+      if (!item.thrownAt) continue;
+      if (item.state !== 'loose' || !item.body || now - item.thrownAt > 4000) { item.thrownAt = 0; continue; }
+      const s = item.p.slot;
+      const t = item.body.translation();
+      const v = item.body.linvel();
+      const r = item.p.fp.h / 2 + 0.06; // generous: the item only has to clip the opening
+      // only while still flying, so an item resting on the wrong shelf never counts
+      if (v.x * v.x + v.y * v.y + v.z * v.z > 0.5
+        && Math.abs(t.x - s.center.x) < s.boxSize.x / 2 + r && Math.abs(t.y - s.center.y) < s.boxSize.y / 2 + r
+        && Math.abs(t.z - s.center.z) < s.boxSize.z / 2 + r && item.p.placed < item.p.count) {
+        item.thrownAt = 0;
+        this.place(item);
+        this.game.credits += 3; this.game.score += 3;
+        sfx.ding(8);
+        this.hud.popup('TRICK SHOT! +3', 'good');
+      }
+    }
   }
 
   toggleCart() {
@@ -258,17 +303,36 @@ export class Carry {
 
   // ---------- per-frame visuals ----------
   refreshHeld() {
+    if (this.sel == null || this.sel >= this.hand.length) this.sel = Math.max(0, this.hand.length - 1);
     this.held.clear();
-    let y = 0;
-    for (const item of this.hand.slice(-6)) {
-      const m = new THREE.Mesh(item.p.geometry, item.p.material);
-      const h = item.p.fp.h;
-      m.position.y = y + h / 2;
-      y += h + 0.01;
+    // selected item in front, the rest of the stack behind it
+    const sel = this.selected;
+    if (sel) {
+      const m = new THREE.Mesh(sel.p.geometry, sel.p.material);
+      m.position.set(0, sel.p.fp.h / 2, 0.05);
       this.held.add(m);
     }
-    this.held.position.y = -0.36 - Math.min(y, 0.5) * 0.4;
-    this.hud.setHand(this.hand, this.game.eff.carry, this.cart);
+    let y = 0;
+    for (const item of this.hand.filter((i) => i !== sel).slice(-5)) {
+      const m = new THREE.Mesh(item.p.geometry, item.p.material);
+      m.position.set(0.18, y + item.p.fp.h / 2, -0.12);
+      m.scale.setScalar(0.8);
+      y += item.p.fp.h * 0.8 + 0.01;
+      this.held.add(m);
+    }
+    this.heldY = -0.36 - Math.min(Math.max(y, sel ? sel.p.fp.h : 0), 0.5) * 0.4;
+    this.held.position.y = this.heldY;
+    this.hud.setHand(this.hand, this.game.eff.carry, this.cart, this.sel);
+  }
+
+  // held items bob along with your walk
+  sway(player, t) {
+    const k = player.bobAmt;
+    this.held.position.set(
+      0.34 + Math.cos(player.bob) * 0.014 * k,
+      (this.heldY ?? -0.36) - Math.abs(Math.sin(player.bob)) * 0.018 * k + Math.sin(t * 1.6) * 0.003,
+      -0.7,
+    );
   }
 
   updateScanner(eff, t) {
@@ -286,7 +350,7 @@ export class Carry {
 
   // Radar upgrade: direction to the nearest loose item worth grabbing next.
   radarTarget() {
-    const focus = this.hand.length ? this.hand[this.hand.length - 1].p : this.game.lastProduct;
+    const focus = this.selected ? this.selected.p : this.game.lastProduct;
     const loose = this.items.all.filter((i) => i.state === 'loose');
     if (!loose.length) return null;
     const pick = (list) => {
