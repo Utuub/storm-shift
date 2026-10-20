@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Storm Shift</title>
+<meta name="description" content="A first-person Three.js game: a storm wrecked the grocery store and you can't clock out until all 1,500 items are back on the shelves.">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "@dimforge/rapier3d-compat": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.14.0/rapier.es.js"
+  }
+}
+</script>
+</head>
+<body>
+
+<div id="loading" class="overlay"><div class="card"><h1>Storm Shift</h1><p>Loading the store…</p></div></div>
+
+<!-- title -->
+<div id="title" class="overlay" hidden>
+  <div class="card">
+    <p class="eyebrow">CSCI 310 · Project 2</p>
+    <h1>Storm Shift</h1>
+    <p class="lede">The storm wrecked the store. You're not going home until it's fixed.</p>
+    <div class="controls">
+      <div><kbd>W A S D</kbd> move</div>
+      <div><kbd>Mouse</kbd> look</div>
+      <div><kbd>Shift</kbd> sprint</div>
+      <div><kbd>Click</kbd> grab item</div>
+      <div><kbd>E</kbd> stock shelf / talk / unload</div>
+      <div><kbd>Q</kbd> or <kbd>Right-click</kbd> drop</div>
+      <div><kbd>F</kbd> push cart</div>
+      <div><kbd>Tab</kbd> checklist</div>
+      <div><kbd>R</kbd> ×2 reset</div>
+      <div><kbd>Esc</kbd> pause</div>
+    </div>
+    <button id="btn-title" class="btn">Clock In</button>
+  </div>
+</div>
+
+<!-- story -->
+<div id="story" class="overlay" hidden>
+  <div class="card story">
+    <p>It's the closing shift at <b>Corner Fresh Market</b>. The last customer left twenty minutes ago and you're mopping aisle 4 when the tornado sirens go off.</p>
+    <p>Dale, the general manager, locks the front doors and tells everyone to get away from the windows.</p>
+    <p>Then the storm hits the building.</p>
+    <p>When it passes, nothing is broken, but every one of the store's <b>1,500 items</b> is on the floor. Dale has one rule: <b>nobody clocks out until this store is back in order.</b></p>
+    <p class="dim">Put every item back in its own spot. Each one earns store credit, and Dale will trade credit for upgrades at the office desk.</p>
+    <button id="btn-story" class="btn">Start Shift</button>
+  </div>
+</div>
+
+<div id="pause" class="overlay" hidden>
+  <div class="card"><h2>Paused</h2><p>Click anywhere to keep working.</p></div>
+</div>
+
+<div id="win" class="overlay" hidden>
+  <div class="card">
+    <p class="eyebrow">Shift complete</p>
+    <h1>The store's back in order.</h1>
+    <p class="lede">Dale unlocks the doors. You can clock out.</p>
+    <div id="win-stats" class="stats"></div>
+    <button id="btn-again" class="btn">Work Another Shift</button>
+  </div>
+</div>
+
+<div id="storm-caption" hidden>THE STORM HITS</div>
+
+<!-- upgrade menu -->
+<div id="menu" hidden>
+  <div class="menu-card">
+    <div class="menu-head">
+      <div>
+        <p class="eyebrow">Office · Dale, General Manager</p>
+        <p id="menu-quote" class="quote"></p>
+      </div>
+      <div class="menu-credits"><span id="menu-credits">0</span> credits</div>
+    </div>
+    <div id="menu-tree"></div>
+    <button id="menu-close" class="btn">Back to work (E)</button>
+  </div>
+</div>
+
+<!-- HUD -->
+<div id="hud" hidden>
+  <div id="crosshair"></div>
+  <div id="aim-wrap"><div id="aim"></div><div id="aim-sub"></div></div>
+
+  <div class="panel top-left">
+    <div class="stat-big"><span id="hud-shelved">0 / 1500</span> shelved</div>
+    <div class="bar"><div id="hud-bar"></div></div>
+    <div class="row"><span>Credits <b id="hud-credits">0</b></span><span>Score <b id="hud-score">0</b></span><span id="hud-time">0:00</span></div>
+    <div id="hud-combo"></div>
+  </div>
+
+  <div class="panel bottom-right">
+    <div id="hand"></div>
+    <div id="hud-cart" hidden></div>
+  </div>
+
+  <div id="stamina"><div id="stamina-fill"></div></div>
+
+  <div id="radar" hidden><div id="radar-arrow">▲</div><div id="radar-dist"></div></div>
+
+  <div id="toasts"></div>
+  <div id="checklist" class="panel" hidden></div>
+  <div id="reset-hint" hidden>Press R again to reset the game</div>
+  <div id="flash"></div>
+</div>
+
+<noscript>This game needs JavaScript.</noscript>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
