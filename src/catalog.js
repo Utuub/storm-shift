@@ -142,12 +142,12 @@ export const SECTIONS = [
     ['Toaster Pastries', 'box_m', '#3a8ae8', 6], ['Peanut Butter', 'jar', '#b8742a', 7],
   ]},
   { name: 'Baking', color: '#8d6e63', products: [
-    ['All-Purpose Flour', 'flour', '#f4f1e8', 6], ['Granulated Sugar', 'flour', '#e8eef4', 6],
+    ['All-Purpose Flour', 'flour', '#f4f1e8', 6], ['Granulated Sugar', 'flour', '#2a62b8', 6],
     ['Brown Sugar', 'box_s', '#8a5a2a', 5], ['Baking Soda', 'box_s', '#f2781a', 6],
     ['Baking Powder', 'can_s', '#d8282a', 5], ['Vanilla Extract', 'bottle_s', '#3a2a1a', 6],
     ['Chocolate Chips', 'pouch', '#5a2a1a', 7], ['Yellow Cake Mix', 'box_m', '#f2c23a', 6],
     ['Chocolate Frosting', 'tub', '#4a2a1a', 6], ['Vegetable Oil', 'bottle_l', '#e8d84a', 4],
-    ['Cornmeal', 'flour', '#f2d26a', 4], ['Powdered Sugar', 'flour', '#f6f6f6', 4],
+    ['Cornmeal', 'flour', '#f2d26a', 4], ['Powdered Sugar', 'flour', '#c8323a', 4],
   ]},
   { name: 'Candy', color: '#e84393', products: [
     ['Milk Chocolate Bars', 'box_s', '#5a2a1a', 10], ['Gummy Bears', 'pouch', '#e83a3a', 8],

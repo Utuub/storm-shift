@@ -3,12 +3,12 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Procedural 3D models for every product. Each model is merged into ONE
 // geometry with vertex colors so a product is still a single draw call.
-// The product's label texture is 128x128: x 0..112 is the label art and
-// x 116..128 is plain white, so untextured parts sample white and just
+// The product's label texture is 256x256: x 0..224 is the label art and
+// x 232..256 is plain white, so untextured parts sample white and just
 // show their vertex color.
 
-export const LABEL_U = 112 / 128;
-const WHITE_U = 122 / 128;
+export const LABEL_U = 224 / 256;
+const WHITE_U = 244 / 256;
 
 // Models picked by product name (the rest are picked by shape).
 const BY_NAME = {
@@ -36,6 +36,10 @@ const BY_SHAPE = {
 };
 
 export const modelKey = (p) => BY_NAME[p.name] || BY_SHAPE[p.shapeKey] || 'box';
+
+// Loose produce has no package, so it needs no label texture.
+const NO_LABEL = new Set(['apple', 'orange', 'citrus', 'tomato', 'potato', 'onion', 'avocado', 'peach', 'melon', 'banana']);
+export const hasLabel = (p) => !NO_LABEL.has(modelKey(p));
 
 // ---------- helpers ----------
 function rng(seed) {

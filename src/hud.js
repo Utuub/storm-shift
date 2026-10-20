@@ -20,7 +20,7 @@ export class HUD {
       aimSub: $('aim-sub'), hand: $('hand'), cart: $('hud-cart'), stamina: $('stamina'),
       staminaFill: $('stamina-fill'), notices: $('notices'), flash: $('flash'),
       radar: $('radar'), radarArrow: $('radar-arrow'), radarDist: $('radar-dist'),
-      checklist: $('checklist'), resetHint: $('reset-hint'), popups: $('popups'),
+      checklist: $('checklist'), popups: $('popups'),
       banner: $('banner'), dialog: $('dialog'), dialogText: $('dialog-text'), fps: $('fps'),
     };
     this.typing = null;
@@ -146,7 +146,6 @@ export class HUD {
     }).join(''));
   }
 
-  resetHint(on) { this.el.resetHint.hidden = !on; }
 
   fps(on, v) {
     this.el.fps.hidden = !on;

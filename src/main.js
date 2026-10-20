@@ -14,6 +14,7 @@ import { drawSlotTag } from './textures.js';
 import { initAudio, setVolumes, sfx } from './audio.js';
 import { loadSettings, saveSettings, DEFAULTS, ACTIONS, keyLabel } from './settings.js';
 import { readSave, writeSave, applySave, clearSave } from './save.js';
+import { Coworker } from './coworker.js';
 
 const $ = (id) => document.getElementById(id);
 const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -59,6 +60,7 @@ const carry = new Carry({
   onWin: win, onMenu: openShop,
 });
 const menu = new UpgradeMenu($('menu'), game, buy, closeShop);
+const coworker = new Coworker(scene, { items, store, carry });
 const saveCtx = { game, items, carry, cart, player, products, store };
 
 // Title screen shows the store fully stocked.
@@ -80,7 +82,21 @@ function refreshTitle() {
   if (s) $('continue-info').textContent = `${s.game.shelved ?? 0}/1500 shelved · ${fmtTime(s.game.time || 0)}`;
 }
 
-// ---------- pointer lock ----------
+// ---------- fullscreen + pointer lock ----------
+// In fullscreen the game can "keyboard lock" Esc, so Esc pauses and unpauses
+// without the browser kicking you out of mouse capture (which would force a
+// "click to resume"). Must be called from a click.
+function goFullscreen() {
+  if (!settings.fullscreen || document.fullscreenElement) return;
+  const el = document.documentElement;
+  el.requestFullscreen?.({ navigationUI: 'hide' })
+    .then(() => navigator.keyboard?.lock?.(['Escape']))
+    .catch(() => {});
+}
+document.addEventListener('fullscreenchange', () => {
+  if (document.fullscreenElement) navigator.keyboard?.lock?.(['Escape'])?.catch?.(() => {});
+});
+
 const locked = () => document.pointerLockElement === canvas;
 function lock() {
   const fallback = () => {
@@ -108,19 +124,32 @@ document.addEventListener('pointerlockchange', () => {
   }
 });
 document.addEventListener('pointerlockerror', lockFailed);
-$('resume-click').addEventListener('click', lock);
+$('resume-click').addEventListener('click', () => { goFullscreen(); lock(); });
 
 function pause() {
   game.state = 'paused';
   $('save-status').textContent = '';
+  restartArmed = false;
+  $('btn-restart').textContent = 'Restart Shift';
   show('pause');
 }
 
+function resume() {
+  show(null);
+  lock();
+}
+
+let restartArmed = false;
 $('pause').addEventListener('click', (e) => {
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (!act) return;
   sfx.click();
-  if (act === 'resume') lock();
+  if (act === 'resume') { goFullscreen(); resume(); }
+  else if (act === 'restart') {
+    // two clicks so you can't wipe a run by accident
+    if (!restartArmed) { restartArmed = true; e.target.closest('button').textContent = 'Click again to restart'; return; }
+    goFullscreen(); lock(); newGame();
+  }
   else if (act === 'settings' || act === 'controls') openOptions(act, 'pause');
   else if (act === 'save') {
     const ok = writeSave(saveCtx);
@@ -157,6 +186,7 @@ $('story').addEventListener('click', (e) => {
 $('btn-story').addEventListener('click', () => {
   clearInterval(storyTimer);
   sfx.click();
+  goFullscreen();
   lock();
   newGame();
 });
@@ -164,6 +194,7 @@ $('btn-continue').addEventListener('click', () => {
   initAudio(); sfx.click();
   const s = readSave();
   if (!s) return refreshTitle();
+  goFullscreen();
   lock();
   try {
     loadGame(s);
@@ -174,7 +205,7 @@ $('btn-continue').addEventListener('click', () => {
   }
 });
 $('btn-title-options').addEventListener('click', () => { initAudio(); sfx.click(); openOptions('settings', 'title'); });
-$('btn-again').addEventListener('click', () => { sfx.click(); lock(); newGame(); });
+$('btn-again').addEventListener('click', () => { sfx.click(); goFullscreen(); lock(); newGame(); });
 $('btn-win-title').addEventListener('click', () => { sfx.click(); toTitle(); });
 
 // ---------- game flow ----------
@@ -183,6 +214,7 @@ function resetWorld() {
   for (const item of items.all) items.removeBody(item);
   carry.reset();
   cart.remove();
+  coworker.remove();
   player.ignoreHandle = -1;
   Object.assign(game, { credits: 0, score: 0, shelved: 0, wrong: 0, combo: 0, time: 0, lastProduct: null });
   game.owned.clear();
@@ -215,6 +247,7 @@ function loadGame(data) {
   resetWorld();
   applySave(data, saveCtx);
   game.eff = effects(game.owned);
+  syncCoworker();
   cart.cap = game.eff.cartCap;
   cart.updateFill();
   carry.refreshHeld();
@@ -290,6 +323,16 @@ function buy(u) {
   cart.cap = game.eff.cartCap;
   cart.updateFill();
   carry.refreshHeld();
+  if (u.branch === 'Crew') {
+    syncCoworker();
+    if (u.id === 'crew1') hud.say("Jess is on the clock now. She'll pull from the pile and shelve stuff while you work.", 5000);
+  }
+}
+
+function syncCoworker() {
+  if (!game.eff.crew) return;
+  coworker.spawn(new THREE.Vector3(store.office.x + 1.5, 0, store.office.z + 2));
+  coworker.setLevel(game.eff.crew);
 }
 
 function rescue(item) {
@@ -325,7 +368,7 @@ function syncOptions() {
     el.value = settings[k];
     el.nextElementSibling.textContent = fmt(+settings[k]);
   }
-  for (const k of ['invertY', 'shadows', 'showFps']) $(`set-${k}`).checked = settings[k];
+  for (const k of ['invertY', 'shadows', 'showFps', 'fullscreen']) $(`set-${k}`).checked = settings[k];
   $('binds').innerHTML = ACTIONS.map(([a, label]) =>
     `<div class="row bind"><span>${label}</span><button class="bindbtn${waitingBind === a ? ' waiting' : ''}" data-bind="${a}">${waitingBind === a ? 'Press a key…' : keyLabel(settings.binds[a])}</button></div>`).join('');
 }
@@ -337,6 +380,7 @@ function settingChanged(k) {
   else {
     setVolumes({ master: settings.master, sfx: settings.sfx, ambient: settings.ambient });
     if (k === 'showFps' && !settings.showFps) hud.fps(false);
+    if (k === 'fullscreen' && !settings.fullscreen && document.fullscreenElement) document.exitFullscreen();
   }
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => saveSettings(settings), 300);
@@ -348,7 +392,7 @@ for (const k of Object.keys(SLIDERS)) {
     settingChanged(k);
   });
 }
-for (const k of ['invertY', 'shadows', 'showFps']) {
+for (const k of ['invertY', 'shadows', 'showFps', 'fullscreen']) {
   $(`set-${k}`).addEventListener('change', (e) => { settings[k] = e.target.checked; settingChanged(k); });
 }
 $('binds').addEventListener('click', (e) => {
@@ -390,7 +434,6 @@ function applySettings() {
 }
 
 // ---------- input ----------
-let lastR = 0;
 const isBind = (e, action) => e.code === settings.binds[action];
 
 addEventListener('keydown', (e) => {
@@ -409,18 +452,20 @@ addEventListener('keydown', (e) => {
   }
   const st = game.state;
   if (st === 'play' && (isBind(e, 'checklist') || e.code === 'Tab')) e.preventDefault();
-  // ignore key auto-repeat everywhere: holding E or R must not double-fire
+  // ignore key auto-repeat everywhere: holding a key must not double-fire
   if (e.repeat) return;
-  if (st === 'menu' && (e.code === 'Escape' || isBind(e, 'interact'))) { closeShop(); return; }
-  if (st === 'paused' && e.code === 'Escape' && !$('pause').hidden) { lock(); return; }
-  if (st === 'paused' && e.code === 'Escape' && !$('options').hidden) { show(optionsFrom); return; }
-
-  if (isBind(e, 'reset') && (st === 'play' || st === 'win')) {
-    const now = performance.now();
-    if (st === 'win' || now - lastR < 2000) { hud.resetHint(false); lock(); newGame(); }
-    else { lastR = now; hud.resetHint(true); setTimeout(() => hud.resetHint(false), 2000); }
+  if (e.code === 'Escape') {
+    e.preventDefault();
+    if (st === 'play') { document.exitPointerLock(); pause(); }        // only reaches us in fullscreen
+    else if (st === 'menu') closeShop();
+    else if (st === 'paused' && (!$('pause').hidden || !$('options').hidden)) {
+      if (!$('options').hidden && optionsFrom !== 'pause') return show(optionsFrom);
+      waitingBind = null;
+      resume();                                                          // Esc from pause or settings: straight back in
+    } else if (st === 'title' && !$('options').hidden) show('title');
     return;
   }
+  if (st === 'menu' && isBind(e, 'interact')) { closeShop(); return; }
   if (st !== 'play') return;
   if (isBind(e, 'interact')) carry.use();
   else if (isBind(e, 'drop')) carry.drop();
@@ -490,7 +535,6 @@ function frame(now) {
     // too far behind: drop the backlog but keep the interpolation fraction valid
     if (acc >= STEP) acc %= STEP;
     wakers.length = 0;
-    if (st !== 'storm') wakers.push(player.pos);
     if (cart.pushing) wakers.push(cart.pos);
     items.manage(wakers);
   }
@@ -504,6 +548,7 @@ function frame(now) {
     game.time += dt;
     carry.aim(game.eff);
     carry.updateScanner(game.eff, t);
+    coworker.update(dt);
     if (game.eff.radar && frameN % 10 === 0) {
       const target = carry.radarTarget();
       if (target) {
@@ -528,4 +573,4 @@ refreshTitle();
 show('title');
 requestAnimationFrame(frame);
 
-if (DEBUG) window.__game = { game, items, carry, cart, player, store, products, renderer, scene, camera, storm, hud };
+if (DEBUG) window.__game = { game, items, carry, cart, player, store, products, renderer, scene, camera, storm, hud, coworker };

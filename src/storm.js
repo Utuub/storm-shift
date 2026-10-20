@@ -15,8 +15,8 @@ const _s = new THREE.Quaternion();
 const _p = new THREE.Vector3();
 const _fq = new THREE.Quaternion();
 
-// How an item ends up lying in the pile: which face is down, turned to a
-// multiple of 90 degrees so it fits its grid cell. y = height of its center.
+// How an item ends up lying in the pile: which face is down, any spin, and a
+// little tilt so the pile looks messy. y = half its height in that pose.
 function restPose(p, rand) {
   const s = p.shape.size;
   const q = new THREE.Quaternion();
@@ -39,8 +39,51 @@ function restPose(p, rand) {
     else if (pick < wy + wz) { q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2 * (rand() < 0.5 ? 1 : -1)); y = s[2] / 2; }
     else { q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2); y = s[0] / 2; }
   }
-  q.premultiply(_q.setFromAxisAngle(UP, Math.floor(rand() * 4) * Math.PI / 2 + (rand() - 0.5) * 0.25));
+  q.premultiply(_q.setFromEuler(new THREE.Euler((rand() - 0.5) * 0.5, rand() * Math.PI * 2, (rand() - 0.5) * 0.5)));
   return { q, y };
+}
+
+// Half-size of an item's world bounding box in a given orientation.
+const _m3 = new THREE.Matrix3();
+function halfExtents(p, q) {
+  const s = p.shape.size;
+  const h = p.shape.kind === 'box' ? [s[0] / 2, s[1] / 2, s[2] / 2]
+    : p.shape.kind === 'cyl' ? [s[0], s[1] / 2, s[0]] : [s[0], s[0], s[0]];
+  const e = _m3.setFromMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(q)).elements;
+  // column-major: e[col*3+row]
+  return [0, 1, 2].map((r) => Math.abs(e[r]) * h[0] + Math.abs(e[3 + r]) * h[1] + Math.abs(e[6 + r]) * h[2]);
+}
+
+// Drop every item onto a height map one at a time, so they land on top of
+// whatever is already there. Items aim for the middle, so it piles up into
+// a messy mound.
+const HF = 0.1;
+function buildPile(items, heap, rand) {
+  const hf = new Map();
+  const key = (i, j) => i * 10007 + j;
+  return items.map((item) => {
+    const pose = restPose(item.p, rand);
+    const [ex, ey, ez] = halfExtents(item.p, pose.q);
+    let best = null;
+    for (let tries = 0; tries < 4; tries++) {
+      const r = heap.R * Math.pow(rand(), 1.25); // >1 bunches items toward the middle
+      const a = rand() * Math.PI * 2;
+      const x = heap.cx + Math.cos(a) * r, z = heap.cz + Math.sin(a) * r;
+      const i0 = Math.floor((x - ex) / HF), i1 = Math.floor((x + ex) / HF);
+      const j0 = Math.floor((z - ez) / HF), j1 = Math.floor((z + ez) / HF);
+      let base = 0;
+      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) base = Math.max(base, hf.get(key(i, j)) || 0);
+      if (!best || base < best.base) best = { x, z, base, i0, i1, j0, j1 };
+      if (base < 1.3) break; // keep the pile below eye level
+    }
+    // settle a little into the gaps below so it doesn't look stacked
+    const y = best.base * 0.92 + ey;
+    const top = y + ey;
+    for (let i = best.i0; i <= best.i1; i++) for (let j = best.j0; j <= best.j1; j++) {
+      hf.set(key(i, j), Math.max(hf.get(key(i, j)) || 0, top));
+    }
+    return { item, to: new THREE.Vector3(best.x, y, best.z), toQ: pose.q };
+  });
 }
 
 function funnelTexture() {
@@ -81,10 +124,10 @@ export class Storm {
       new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide, color: 0x9aa3b0 }),
     );
     this.funnel = new THREE.Group();
-    this.funnelOuter = mk(4.8, 0.9, 4.5, 0.55);
-    this.funnelInner = mk(3.2, 0.5, 4.5, 0.45);
+    this.funnelOuter = mk(5.2, 0.9, 5, 0.55);
+    this.funnelInner = mk(3.4, 0.5, 5, 0.45);
     this.funnel.add(this.funnelOuter, this.funnelInner);
-    this.funnel.position.set(store.heap.cx, 2.25, store.heap.cz);
+    this.funnel.position.set(store.heap.cx, 2.5, store.heap.cz);
     this.funnel.visible = false;
     scene.add(this.funnel);
   }
@@ -104,27 +147,16 @@ export class Storm {
     const rand = Math.random;
     const { heap } = this.store;
 
-    // pile slots, bottom layer first so early items land underneath
-    const cells = heap.cells.map((c) => ({ ...c, h: 0 }));
-    const order = [];
-    for (let layer = 0; layer < 5; layer++) {
-      const row = cells.filter((c) => c.cap > layer);
-      for (let i = row.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [row[i], row[j]] = [row[j], row[i]]; }
-      order.push(...row);
-    }
-
-    // items closer to the funnel get pulled first
+    // items closer to the funnel get pulled first, and land first (underneath)
     const list = this.items.all.map((item) => {
-      const s = item.p.slot;
-      const d = Math.hypot(s.x - heap.cx, s.zCenter - heap.cz);
-      return { item, release: 0.4 + (d / 26) * RELEASE * 0.75 + rand() * RELEASE * 0.25 };
+      const c = item.p.slot.center;
+      const d = Math.hypot(c.x - heap.cx, c.z - heap.cz);
+      return { item, release: 0.4 + (d / 30) * RELEASE * 0.75 + rand() * RELEASE * 0.25 };
     }).sort((a, b) => a.release - b.release);
+    const pile = buildPile(list.map((l) => l.item), heap, rand);
 
     this.flights = list.map(({ item, release }, i) => {
-      const cell = order[i];
-      const pose = restPose(item.p, rand);
-      const to = new THREE.Vector3(heap.cx + cell.x + (rand() - 0.5) * 0.04, cell.h + pose.y, heap.cz + cell.z + (rand() - 0.5) * 0.04);
-      cell.h += pose.y * 2;
+      const { to, toQ } = pile[i];
       const from = new THREE.Vector3();
       const fromQ = new THREE.Quaternion();
       this.items.slotTransform(item.p, item.p.items.indexOf(item), from, fromQ);
@@ -132,7 +164,7 @@ export class Storm {
       const vy = Math.sqrt(2 * GRAV * (apex - from.y));
       const T = vy / GRAV + Math.sqrt(2 * (apex - to.y) / GRAV);
       return {
-        item, release, from, fromQ, to, toQ: pose.q, vy, T,
+        item, release, from, fromQ, to, toQ, vy, T,
         spin: new THREE.Vector3(rand() - 0.5, rand() - 0.5, rand() - 0.5).normalize(),
         spinRate: 5 + rand() * 9, launched: false, done: false,
       };

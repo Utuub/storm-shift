@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ART, DRAWN } from './labels.js';
 
 function canvas(w, h) {
   const c = document.createElement('canvas');
@@ -33,37 +34,105 @@ function wrapLines(ctx, text, maxW) {
   return lines;
 }
 
-// Package art in x 0..112 (brand color, label band, name). x 112..128 stays
-// white: model parts that aren't labels sample it (see models.js).
-export function productTexture(p) {
-  const c = canvas(128, 128);
-  const ctx = c.getContext('2d');
-  const W = 112;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, 128, 128);
-  const g = ctx.createLinearGradient(0, 0, 0, 128);
-  g.addColorStop(0, shade(p.color, 0.08));
-  g.addColorStop(1, shade(p.color, -0.1));
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, 128);
-  ctx.fillStyle = shade(p.color, -0.18);
-  ctx.fillRect(0, 0, W, 12);
-  ctx.fillRect(0, 116, W, 12);
-  // label oval
-  ctx.fillStyle = 'rgba(255,255,255,0.93)';
-  ctx.beginPath();
-  ctx.ellipse(W / 2, 64, 52, 32, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = shade(p.color, -0.2);
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  ctx.fillStyle = '#1b1b1b';
-  ctx.font = 'bold 15px Arial, sans-serif';
+const EMOJI_FONT = '"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
+
+function drawPicture(ctx, p, cx, cy, size) {
+  const d = DRAWN[p.name];
+  if (d?.kind === 'cubes') {
+    // a little stack of sugar cubes
+    const s = size * 0.3;
+    const cubes = [[-1, 0], [0, 0], [1, 0], [-0.5, -1], [0.5, -1], [0, -2]];
+    for (const [i, j] of cubes) {
+      const x = cx + i * s * 1.05 - s / 2, y = cy + size * 0.25 + j * s * 0.95 - s;
+      ctx.fillStyle = d.color;
+      ctx.fillRect(x, y, s, s);
+      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx.fillRect(x + s * 0.7, y, s * 0.3, s);
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, s, s);
+      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      for (let k = 0; k < 6; k++) ctx.fillRect(x + ((k * 37) % 10) / 10 * s, y + ((k * 53) % 10) / 10 * s, 2, 2);
+    }
+    return;
+  }
+  if (d?.kind === 'mound') {
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + size * 0.3, size * 0.48, size * 0.42, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,0.1)';
+    ctx.beginPath();
+    ctx.ellipse(cx + size * 0.15, cy + size * 0.1, size * 0.12, size * 0.06, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  const art = ART[p.name];
+  if (!art) return;
+  ctx.font = `${size}px ${EMOJI_FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const lines = wrapLines(ctx, p.name, 92).slice(0, 3);
-  const top = 64 - (lines.length - 1) * 8;
-  lines.forEach((l, i) => ctx.fillText(l, W / 2, top + i * 16));
+  ctx.fillStyle = '#000';
+  ctx.fillText(art, cx, cy);
+}
+
+// Package art in x 0..224 (brand color, store brand, picture, name). x 224..256
+// stays white: model parts that aren't labels sample it (see models.js).
+export function productTexture(p) {
+  const S = 256, W = 224;
+  const c = canvas(S, S);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, S, S);
+  const g = ctx.createLinearGradient(0, 0, 0, S);
+  g.addColorStop(0, shade(p.color, 0.1));
+  g.addColorStop(1, shade(p.color, -0.12));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, S);
+  // diagonal stripes for some texture
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  for (let x = -S; x < W; x += 28) {
+    ctx.beginPath();
+    ctx.moveTo(x, S); ctx.lineTo(x + 14, S); ctx.lineTo(x + 14 + S, 0); ctx.lineTo(x + S, 0);
+    ctx.fill();
+  }
+  // store brand banner
+  ctx.fillStyle = shade(p.color, -0.22);
+  ctx.fillRect(0, 0, W, 34);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 17px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('CORNER FRESH', W / 2, 18);
+  // picture in a white circle
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.beginPath();
+  ctx.arc(W / 2, 104, 58, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = shade(p.color, -0.25);
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  drawPicture(ctx, p, W / 2, 108, 78);
+  // name plate
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.fillRect(10, 172, W - 20, 64);
+  ctx.fillStyle = '#1b1b1b';
+  let size = 26;
+  ctx.font = `bold ${size}px Arial, sans-serif`;
+  let lines = wrapLines(ctx, p.name, W - 32);
+  while ((lines.length > 2 || lines.some((l) => ctx.measureText(l).width > W - 32)) && size > 14) {
+    size -= 2;
+    ctx.font = `bold ${size}px Arial, sans-serif`;
+    lines = wrapLines(ctx, p.name, W - 32);
+  }
+  lines = lines.slice(0, 2);
+  const top = 204 - (lines.length - 1) * (size / 2 + 1);
+  lines.forEach((l, i) => ctx.fillText(l, W / 2, top + i * (size + 2)));
+  ctx.fillStyle = shade(p.color, -0.22);
+  ctx.fillRect(0, S - 14, W, 14);
   return tex(c);
 }
 

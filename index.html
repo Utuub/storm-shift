@@ -53,6 +53,7 @@
       <button class="gbtn alt" data-act="settings">Settings</button>
       <button class="gbtn alt" data-act="controls">Controls</button>
       <button class="gbtn alt" data-act="save">Save Game</button>
+      <button id="btn-restart" class="gbtn danger" data-act="restart">Restart Shift</button>
       <button class="gbtn danger" data-act="quit">Save &amp; Quit to Title</button>
     </div>
     <p id="save-status" class="status"></p>
@@ -75,6 +76,7 @@
       <label class="row">Render scale <input type="range" id="set-renderScale" min="0.5" max="1.5" step="0.05"><output></output></label>
       <label class="row">Shadows <input type="checkbox" id="set-shadows" class="toggle"></label>
       <label class="row">Show FPS <input type="checkbox" id="set-showFps" class="toggle"></label>
+      <label class="row">Fullscreen (Esc pauses + resumes) <input type="checkbox" id="set-fullscreen" class="toggle"></label>
       <h4>Audio</h4>
       <label class="row">Master volume <input type="range" id="set-master" min="0" max="1" step="0.05"><output></output></label>
       <label class="row">Effects volume <input type="range" id="set-sfx" min="0" max="1" step="0.05"><output></output></label>
@@ -153,7 +155,6 @@
   <div id="radar" hidden><div id="radar-arrow">➤</div><div id="radar-dist"></div></div>
   <div id="banner"></div>
   <div id="checklist" class="hud-panel" hidden></div>
-  <div id="reset-hint" hidden>Press again to reset the whole game</div>
   <div id="fps" hidden></div>
 
   <div id="dialog" class="dialog-panel" hidden>

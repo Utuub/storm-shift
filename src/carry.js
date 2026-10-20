@@ -199,18 +199,22 @@ export class Carry {
     this.refreshHeld();
   }
 
-  // Put one item in its slot and pay out credits.
-  place(item) {
+  // Put one item in its slot and pay out credits. The coworker's items
+  // (byHelper) pay a flat 1 credit and don't touch your combo.
+  place(item, byHelper = false) {
     const g = this.game;
     const p = item.p;
     this.items.shelve(item, p.placed);
     p.placed++;
     g.shelved++;
-    g.combo++;
-    const pay = g.comboMult();
+    let pay = 1;
+    if (!byHelper) {
+      g.combo++;
+      pay = g.comboMult();
+      g.lastProduct = p;
+    }
     g.credits += pay;
     g.score += pay;
-    g.lastProduct = p;
     drawSlotTag(p.slot.tag, p);
 
     if (p.placed === p.count) {

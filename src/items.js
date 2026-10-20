@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RAPIER, world, groups, G } from './physics.js';
 import { productTexture } from './textures.js';
-import { buildModel } from './models.js';
+import { buildModel, hasLabel } from './models.js';
 
 function colliderDesc(shape) {
   const s = shape.size;
@@ -25,8 +25,8 @@ const STILL_FRAMES = 25;
 
 // One InstancedMesh per product. Each item is one instance. A loose item is
 // either "active" (a dynamic Rapier body) or "resting" (a cheap fixed collider
-// kept only so it can be aimed at). Only items near the player or cart are
-// active, which keeps 1500 items on the floor affordable.
+// kept only so it can be aimed at). Only dropped/falling items and items the
+// pushed cart plows into are active, which keeps 1500 items affordable.
 export class Items {
   constructor(scene, products) {
     this.products = products;
@@ -35,8 +35,11 @@ export class Items {
     this.hovered = null;
     this.dirty = new Set();
 
+    const plain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 });
     for (const p of products) {
-      const material = new THREE.MeshStandardMaterial({ map: productTexture(p), vertexColors: true, roughness: 0.55 });
+      const material = hasLabel(p)
+        ? new THREE.MeshStandardMaterial({ map: productTexture(p), vertexColors: true, roughness: 0.55 })
+        : plain;
       p.material = material;
       p.geometry = buildModel(p);
       const mesh = new THREE.InstancedMesh(p.geometry, material, p.count);
@@ -71,9 +74,10 @@ export class Items {
   // Transform of the k-th spot in a product's shelf slot.
   slotTransform(p, k, outPos, outQuat) {
     const s = p.slot;
-    const restY = p.shape.kind === 'box' ? p.fp.h / 2 : p.shape.kind === 'cyl' ? p.fp.h / 2 : p.fp.w / 2;
-    outPos.set(s.x, s.y + restY + 0.002, s.zStart + (k + 0.5) * s.pitch);
-    outQuat.setFromAxisAngle(UP, s.side * Math.PI / 2);
+    const restY = p.shape.kind === 'ball' ? p.fp.w / 2 : p.fp.h / 2;
+    outPos.copy(s.start).addScaledVector(s.u, (k + 0.5) * s.pitch);
+    outPos.y = s.y + restY + 0.002;
+    outQuat.setFromAxisAngle(UP, s.yaw);
   }
 
   shelve(item, k) {
@@ -153,12 +157,23 @@ export class Items {
     item.flying = false;
   }
 
-  // Take an item off the floor (into a hand or cart).
+  // Take an item off the floor (into a hand, cart, or the coworker's hands).
   take(item, state) {
     if (this.hovered === item) this.setHover(null);
+    const wasResting = item.state === 'loose' && item.rest;
+    const from = item.restPos.clone();
     this.removeBody(item);
     item.state = state;
     this.hide(item);
+    if (wasResting) this.dropAbove(from);
+  }
+
+  // Anything resting on top of a removed item falls down instead of floating.
+  dropAbove(p) {
+    for (const o of this.all) {
+      if (o.state !== 'loose' || !o.rest || o.restPos.y <= p.y + 0.02) continue;
+      if ((o.restPos.x - p.x) ** 2 + (o.restPos.z - p.z) ** 2 < 0.35 * 0.35) this.wake(o);
+    }
   }
 
   position(item, out) {
@@ -167,7 +182,8 @@ export class Items {
     return out.set(t.x, t.y, t.z);
   }
 
-  // wakers: points (player, pushed cart) that bring nearby items to life.
+  // wakers: points (the pushed cart) that bring nearby items to life.
+  // The player is not a waker: you walk straight through items on the floor.
   manage(wakers) {
     const near = (x, z, r) => wakers.some((w) => (w.x - x) ** 2 + (w.z - z) ** 2 < r * r);
     for (const item of this.all) {

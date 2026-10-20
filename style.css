@@ -125,7 +125,7 @@ kbd.mouse { background: #d6e6ff; }
 .dialog-foot { display: flex; justify-content: flex-end; margin-top: 12px; }
 
 #dialog {
-  position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); width: min(560px, calc(100vw - 32px));
+  position: absolute; left: 50%; top: 84px; transform: translateX(-50%); width: min(560px, calc(100vw - 32px));
   font-size: 16px; padding: 20px 18px 14px; animation: rise 0.2s ease-out;
 }
 #dialog::after { content: '▼'; position: absolute; right: 14px; bottom: 6px; font-size: 12px; animation: pulse 0.6s infinite alternate; }
@@ -224,7 +224,6 @@ kbd.mouse { background: #d6e6ff; }
 .check-row span:last-child { text-align: right; }
 .check-row.done { color: var(--good); }
 
-#reset-hint { position: absolute; left: 0; right: 0; top: 40%; text-align: center; font-family: var(--display); font-size: 26px; color: var(--bad); text-shadow: 0 3px 0 var(--edge); }
 #fps { position: absolute; right: 12px; bottom: 10px; font-family: var(--display); font-size: 14px; color: var(--good); text-shadow: 0 2px 0 var(--edge); }
 
 #flash { position: absolute; inset: 0; opacity: 0; }
