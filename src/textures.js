@@ -33,24 +33,37 @@ function wrapLines(ctx, text, maxW) {
   return lines;
 }
 
-// Package art: brand color, a light label band with the product name.
+// Package art in x 0..112 (brand color, label band, name). x 112..128 stays
+// white: model parts that aren't labels sample it (see models.js).
 export function productTexture(p) {
   const c = canvas(128, 128);
   const ctx = c.getContext('2d');
-  ctx.fillStyle = p.color;
+  const W = 112;
+  ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, 128, 128);
-  ctx.fillStyle = shade(p.color, -0.12);
-  ctx.fillRect(0, 0, 128, 14);
-  ctx.fillRect(0, 114, 128, 14);
-  ctx.fillStyle = 'rgba(255,255,255,0.88)';
-  ctx.fillRect(6, 34, 116, 60);
+  const g = ctx.createLinearGradient(0, 0, 0, 128);
+  g.addColorStop(0, shade(p.color, 0.08));
+  g.addColorStop(1, shade(p.color, -0.1));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, 128);
+  ctx.fillStyle = shade(p.color, -0.18);
+  ctx.fillRect(0, 0, W, 12);
+  ctx.fillRect(0, 116, W, 12);
+  // label oval
+  ctx.fillStyle = 'rgba(255,255,255,0.93)';
+  ctx.beginPath();
+  ctx.ellipse(W / 2, 64, 52, 32, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = shade(p.color, -0.2);
+  ctx.lineWidth = 3;
+  ctx.stroke();
   ctx.fillStyle = '#1b1b1b';
-  ctx.font = 'bold 17px Arial, sans-serif';
+  ctx.font = 'bold 15px Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const lines = wrapLines(ctx, p.name, 110).slice(0, 3);
-  const top = 64 - (lines.length - 1) * 9;
-  lines.forEach((l, i) => ctx.fillText(l, 64, top + i * 18));
+  const lines = wrapLines(ctx, p.name, 92).slice(0, 3);
+  const top = 64 - (lines.length - 1) * 8;
+  lines.forEach((l, i) => ctx.fillText(l, W / 2, top + i * 16));
   return tex(c);
 }
 

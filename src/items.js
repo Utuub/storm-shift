@@ -1,18 +1,7 @@
 import * as THREE from 'three';
 import { RAPIER, world, groups, G } from './physics.js';
 import { productTexture } from './textures.js';
-
-const geoCache = {};
-function geometryFor(shapeKey, shape) {
-  if (geoCache[shapeKey]) return geoCache[shapeKey];
-  const s = shape.size;
-  let geo;
-  if (shape.kind === 'box') geo = new THREE.BoxGeometry(s[0], s[1], s[2]);
-  else if (shape.kind === 'cyl') geo = new THREE.CylinderGeometry(s[0], s[0], s[1], 14);
-  else geo = new THREE.SphereGeometry(s[0], 14, 10);
-  geoCache[shapeKey] = geo;
-  return geo;
-}
+import { buildModel } from './models.js';
 
 function colliderDesc(shape) {
   const s = shape.size;
@@ -30,8 +19,8 @@ const WHITE = new THREE.Color(1, 1, 1);
 const HOVER = new THREE.Color(1.7, 1.7, 0.9);
 const UP = new THREE.Vector3(0, 1, 0);
 
-const WAKE_R = 1.1;     // items this close to the player or cart get a live body
-const FREEZE_R = 1.9;   // ...and only freeze again once they're this far away
+const WAKE_R = 0.9;     // items this close to the player or cart get a live body
+const FREEZE_R = 1.7;   // ...and only freeze again once they're this far away
 const STILL_FRAMES = 25;
 
 // One InstancedMesh per product. Each item is one instance. A loose item is
@@ -47,15 +36,12 @@ export class Items {
     this.dirty = new Set();
 
     for (const p of products) {
-      const material = p.shape.kind === 'ball'
-        ? new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.55 })
-        : new THREE.MeshStandardMaterial({ map: productTexture(p), roughness: 0.6 });
+      const material = new THREE.MeshStandardMaterial({ map: productTexture(p), vertexColors: true, roughness: 0.55 });
       p.material = material;
-      p.geometry = geometryFor(p.shapeKey, p.shape);
+      p.geometry = buildModel(p);
       const mesh = new THREE.InstancedMesh(p.geometry, material, p.count);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.frustumCulled = false;
-      mesh.castShadow = true;
       mesh.receiveShadow = true;
       for (let k = 0; k < p.count; k++) mesh.setColorAt(k, WHITE);
       scene.add(mesh);

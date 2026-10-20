@@ -141,7 +141,7 @@ export const SECTIONS = [
     ['Pancake Mix', 'box_m', '#e8c26a', 5], ['Maple Syrup', 'bottle', '#a85a1a', 5],
     ['Toaster Pastries', 'box_m', '#3a8ae8', 6], ['Peanut Butter', 'jar', '#b8742a', 7],
   ]},
-  { name: 'Baking', color: '#bdc3c7', products: [
+  { name: 'Baking', color: '#8d6e63', products: [
     ['All-Purpose Flour', 'flour', '#f4f1e8', 6], ['Granulated Sugar', 'flour', '#e8eef4', 6],
     ['Brown Sugar', 'box_s', '#8a5a2a', 5], ['Baking Soda', 'box_s', '#f2781a', 6],
     ['Baking Powder', 'can_s', '#d8282a', 5], ['Vanilla Extract', 'bottle_s', '#3a2a1a', 6],
@@ -181,7 +181,7 @@ export const SECTIONS = [
     ['Fabric Softener', 'jug', '#a87ae8', 4], ['Floor Cleaner', 'bottle_l', '#e8c83a', 4],
     ['Scrub Brush', 'box_s', '#e83a3a', 4], ['Rubber Gloves', 'pouch', '#f2e21a', 5],
   ]},
-  { name: 'Paper Goods', color: '#95a5a6', products: [
+  { name: 'Paper Goods', color: '#607d8b', products: [
     ['Paper Towels', 'roll', '#f6f6f2', 8], ['Toilet Paper 12-Pack', 'tp', '#e8f0f8', 6],
     ['Facial Tissues', 'box_m', '#8ac8e8', 6], ['Paper Plates', 'plates', '#f2f2ea', 5],
     ['Napkins', 'stick', '#f6f6f6', 6], ['Aluminum Foil', 'box_long', '#9aa8b8', 5],

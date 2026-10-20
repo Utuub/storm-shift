@@ -3,6 +3,7 @@ import { castRay, G } from './physics.js';
 import { drawSlotTag } from './textures.js';
 import { TOTAL_ITEMS } from './catalog.js';
 import { sfx } from './audio.js';
+import { keyLabel } from './settings.js';
 
 const _o = new THREE.Vector3();
 const _d = new THREE.Vector3();
@@ -12,8 +13,8 @@ const _e = new THREE.Euler();
 
 // Aiming, picking up, stocking shelves, dropping, and the cart controls.
 export class Carry {
-  constructor({ game, items, player, cart, gm, hud, camera, scene, store, onWin, onMenu }) {
-    Object.assign(this, { game, items, player, cart, gm, hud, camera, store, onWin, onMenu });
+  constructor({ game, items, player, cart, gm, hud, camera, scene, store, settings, onWin, onMenu }) {
+    Object.assign(this, { game, items, player, cart, gm, hud, camera, store, settings, onWin, onMenu });
     this.hand = [];
     this.target = null;
     this.slotByHandle = new Map(store.slots.map((s) => [s.collider.handle, s]));
@@ -78,21 +79,25 @@ export class Carry {
     if (t?.type === 'slot') {
       const s = t.slot;
       this.slotBox.position.copy(s.center);
-      this.slotBox.scale.set(0.56, 0.47, s.width);
+      this.slotBox.scale.set(0.44, s.height - 0.02, s.width);
     }
 
-    if (!t) return this.hud.setAim('');
+    const k = (code) => `<kbd>${keyLabel(this.settings.binds[code])}</kbd>`;
+    const lmb = '<kbd class="mouse">LMB</kbd>';
+    if (!t) return this.hud.setAim('', '');
     if (t.type === 'item') {
       const full = this.hand.length >= eff.carry && !this.cartAccepts();
-      this.hud.setAim(t.item.p.name, full ? 'Hands full' : `${t.item.p.section.name} · click to grab`);
+      this.hud.setAim(t.item.p.name, full ? '<span class="warn">Hands full</span>' : `${lmb} Grab`);
     } else if (t.type === 'slot') {
       const p = t.slot.product;
       const n = this.matching(p).length;
-      this.hud.setAim(`${p.name}  ${p.placed}/${p.count}`, n ? `E · stock ${n}` : p.section.name);
+      const done = p.placed >= p.count;
+      this.hud.setAim(`${p.name} <span class="count${done ? ' done' : ''}">${p.placed}/${p.count}</span>`,
+        n ? `${lmb} Stock ${n}` : done ? '<span class="ok">Full</span>' : '');
     } else if (t.type === 'gm') {
-      this.hud.setAim('Dale · General Manager', 'E · upgrades');
+      this.hud.setAim('Dale', `${k('interact')} Upgrades`);
     } else {
-      this.hud.setAim(`Shopping cart ${this.cart.items.length}/${this.cart.cap}`, 'E · unload hands into cart · F · push');
+      this.hud.setAim(`Cart ${this.cart.items.length}/${this.cart.cap}`, `${k('interact')} Unload hands &nbsp; ${k('cart')} Push`);
     }
   }
 
@@ -113,7 +118,9 @@ export class Carry {
   }
 
   // ---------- actions ----------
+  // Left click: grab the item you're looking at, or stock the shelf spot.
   click(eff) {
+    if (this.target?.type === 'slot') return this.stock(this.target.slot);
     if (this.target?.type !== 'item') return;
     const first = this.target.item;
     let list = [first];
@@ -135,7 +142,7 @@ export class Carry {
     }
     if (!took) {
       sfx.buzz();
-      this.hud.toast(this.cart.active ? 'Hands full. Bring your cart closer or stock what you have.' : 'Hands full. Go stock what you have.', 'bad');
+      this.hud.notice(this.cart.active ? 'Hands full! Bring your cart closer.' : 'Hands full! Go stock what you have.', 'bad');
       return;
     }
     sfx.pickup();
@@ -143,18 +150,18 @@ export class Carry {
     this.refreshHeld();
   }
 
-  use(eff) {
+  // Interact key: talk to the GM or unload into the cart.
+  use() {
     const t = this.target;
     if (!t) return;
     if (t.type === 'gm') this.onMenu();
     else if (t.type === 'cart') this.unloadToCart();
-    else if (t.type === 'slot') this.stock(t.slot);
   }
 
   unloadToCart() {
     const room = this.cart.cap - this.cart.items.length;
-    if (!this.hand.length) return this.hud.toast('Nothing in your hands.');
-    if (room <= 0) { sfx.buzz(); return this.hud.toast('Cart is full.', 'bad'); }
+    if (!this.hand.length) return this.hud.notice('Nothing in your hands.');
+    if (room <= 0) { sfx.buzz(); return this.hud.notice('Cart is full!', 'bad'); }
     const moved = this.hand.splice(Math.max(0, this.hand.length - room));
     moved.forEach((i) => (i.state = 'cart'));
     this.cart.items.push(...moved);
@@ -169,23 +176,25 @@ export class Carry {
     const list = this.matching(p);
     if (!list.length) {
       const holding = this.hand.length || (this.cartInRange(this.player.pos) && this.cart.items.length);
-      if (!holding) return this.hud.toast('Your hands are empty.');
+      if (!holding) return this.hud.notice('Your hands are empty.');
       g.wrong++;
       g.combo = 0;
       sfx.buzz();
       this.hud.flash('bad');
+      this.hud.popup('WRONG SPOT!', 'bad');
       const top = this.hand[this.hand.length - 1];
-      this.hud.toast(`Wrong spot. This is <b>${p.name}</b>${top ? `, you're holding <b>${top.p.name}</b>` : ''}.`, 'bad');
+      if (top) this.hud.notice(`That's the <b>${p.name}</b> spot. You're holding <b>${top.p.name}</b>.`, 'bad');
       return;
     }
-    if (p.placed >= p.count) return;
 
     const set = new Set(list);
     this.hand = this.hand.filter((i) => !set.has(i));
     this.cart.items = this.cart.items.filter((i) => !set.has(i));
+    const before = g.credits;
     for (const item of list) this.place(item);
     sfx.ding(Math.floor(g.combo / 5));
     this.hud.flash('good');
+    this.hud.popup(`+${g.credits - before}`, 'good');
     this.cart.updateFill();
     this.refreshHeld();
   }
@@ -210,7 +219,7 @@ export class Carry {
       if (sec.list.every((x) => x.placed === x.count)) {
         g.credits += 40; g.score += 40;
         sfx.complete();
-        this.hud.toast(`<b>${sec.name}</b> restocked! +40 credits`, 'good');
+        this.hud.banner(`${sec.name} restocked!`, '+40 bonus credits');
       }
     }
     if (g.shelved === TOTAL_ITEMS) this.onWin();
@@ -238,7 +247,7 @@ export class Carry {
       c.pushing = true;
       this.player.ignoreHandle = c.handle;
     } else {
-      this.hud.toast('Walk up to your cart to push it.');
+      this.hud.notice('Walk up to your cart to push it.');
     }
     this.refreshHeld();
   }
@@ -266,7 +275,7 @@ export class Carry {
       g.visible = !!p;
       if (p) {
         g.position.copy(p.slot.center);
-        g.scale.set(0.58, 0.48, p.slot.width + 0.02);
+        g.scale.set(0.46, p.slot.height, p.slot.width + 0.02);
       }
     });
   }
@@ -279,9 +288,9 @@ export class Carry {
     const pick = (list) => {
       let best = null, bd = Infinity;
       for (const i of list) {
-        const t = this.items.position(i, new THREE.Vector3());
+        const t = this.items.position(i, _a);
         const d = (t.x - this.player.pos.x) ** 2 + (t.z - this.player.pos.z) ** 2;
-        if (d < bd) { bd = d; best = t; }
+        if (d < bd) { bd = d; best = { x: t.x, z: t.z }; }
       }
       return best;
     };

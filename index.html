@@ -4,12 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Storm Shift</title>
-<meta name="description" content="A first-person Three.js game: a storm wrecked the grocery store and you can't clock out until all 1,500 items are back on the shelves.">
+<meta name="description" content="A first-person Three.js game: a tornado wrecked the grocery store and you can't clock out until all 1,500 items are back on the shelves.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Lilita+One&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <script type="importmap">
 {
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
     "@dimforge/rapier3d-compat": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.14.0/rapier.es.js"
   }
 }
@@ -17,97 +21,145 @@
 </head>
 <body>
 
-<div id="loading" class="overlay"><div class="card"><h1>Storm Shift</h1><p>Loading the store…</p></div></div>
+<div id="loading" class="screen"><div class="logo">STORM<span>SHIFT</span></div><p class="loading-text">Stocking the shelves…</p></div>
 
 <!-- title -->
-<div id="title" class="overlay" hidden>
-  <div class="card">
-    <p class="eyebrow">CSCI 310 · Project 2</p>
-    <h1>Storm Shift</h1>
-    <p class="lede">The storm wrecked the store. You're not going home until it's fixed.</p>
-    <div class="controls">
-      <div><kbd>W A S D</kbd> move</div>
-      <div><kbd>Mouse</kbd> look</div>
-      <div><kbd>Shift</kbd> sprint</div>
-      <div><kbd>Click</kbd> grab item</div>
-      <div><kbd>E</kbd> stock shelf / talk / unload</div>
-      <div><kbd>Q</kbd> or <kbd>Right-click</kbd> drop</div>
-      <div><kbd>F</kbd> push cart</div>
-      <div><kbd>Tab</kbd> checklist</div>
-      <div><kbd>R</kbd> ×2 reset</div>
-      <div><kbd>Esc</kbd> pause</div>
-    </div>
-    <button id="btn-title" class="btn">Clock In</button>
+<div id="title" class="screen" hidden>
+  <div class="logo">STORM<span>SHIFT</span></div>
+  <p class="tagline">The tornado wrecked the store. Nobody clocks out until it's fixed.</p>
+  <div class="menu-stack">
+    <button id="btn-continue" class="gbtn" hidden>Continue<small id="continue-info"></small></button>
+    <button id="btn-new" class="gbtn">New Shift</button>
+    <button id="btn-title-options" class="gbtn alt">Settings</button>
   </div>
+  <p class="hint">CSCI 310 · Project 2</p>
 </div>
 
 <!-- story -->
-<div id="story" class="overlay" hidden>
-  <div class="card story">
-    <p>It's the closing shift at <b>Corner Fresh Market</b>. The last customer left twenty minutes ago and you're mopping aisle 4 when the tornado sirens go off.</p>
-    <p>Dale, the general manager, locks the front doors and tells everyone to get away from the windows.</p>
-    <p>Then the storm hits the building.</p>
-    <p>When it passes, nothing is broken, but every one of the store's <b>1,500 items</b> is on the floor. Dale has one rule: <b>nobody clocks out until this store is back in order.</b></p>
-    <p class="dim">Put every item back in its own spot. Each one earns store credit, and Dale will trade credit for upgrades at the office desk.</p>
-    <button id="btn-story" class="btn">Start Shift</button>
+<div id="story" class="screen" hidden>
+  <div class="dialog-panel big">
+    <div class="nameplate">CLOSING SHIFT · 9:47 PM</div>
+    <div id="story-text" class="dialog-body"></div>
+    <div class="dialog-foot"><button id="btn-story" class="gbtn small">Start Shift ▶</button></div>
   </div>
 </div>
 
-<div id="pause" class="overlay" hidden>
-  <div class="card"><h2>Paused</h2><p>Click anywhere to keep working.</p></div>
+<!-- pause -->
+<div id="pause" class="screen dim" hidden>
+  <div class="panel-card">
+    <h2 class="panel-title">PAUSED</h2>
+    <div class="menu-stack">
+      <button class="gbtn" data-act="resume">Resume</button>
+      <button class="gbtn alt" data-act="settings">Settings</button>
+      <button class="gbtn alt" data-act="controls">Controls</button>
+      <button class="gbtn alt" data-act="save">Save Game</button>
+      <button class="gbtn danger" data-act="quit">Save &amp; Quit to Title</button>
+    </div>
+    <p id="save-status" class="status"></p>
+  </div>
 </div>
 
-<div id="win" class="overlay" hidden>
-  <div class="card">
-    <p class="eyebrow">Shift complete</p>
-    <h1>The store's back in order.</h1>
-    <p class="lede">Dale unlocks the doors. You can clock out.</p>
+<!-- settings / controls -->
+<div id="options" class="screen dim" hidden>
+  <div class="panel-card wide">
+    <div class="tabs">
+      <button class="tab" data-tab="settings">Settings</button>
+      <button class="tab" data-tab="controls">Controls</button>
+    </div>
+    <div id="tab-settings" class="tab-body">
+      <h4>Mouse</h4>
+      <label class="row">Sensitivity <input type="range" id="set-sensitivity" min="0.2" max="3" step="0.05"><output></output></label>
+      <label class="row">Invert Y <input type="checkbox" id="set-invertY" class="toggle"></label>
+      <h4>Video</h4>
+      <label class="row">Field of view <input type="range" id="set-fov" min="60" max="100" step="1"><output></output></label>
+      <label class="row">Render scale <input type="range" id="set-renderScale" min="0.5" max="1.5" step="0.05"><output></output></label>
+      <label class="row">Shadows <input type="checkbox" id="set-shadows" class="toggle"></label>
+      <label class="row">Show FPS <input type="checkbox" id="set-showFps" class="toggle"></label>
+      <h4>Audio</h4>
+      <label class="row">Master volume <input type="range" id="set-master" min="0" max="1" step="0.05"><output></output></label>
+      <label class="row">Effects volume <input type="range" id="set-sfx" min="0" max="1" step="0.05"><output></output></label>
+      <label class="row">Ambient volume <input type="range" id="set-ambient" min="0" max="1" step="0.05"><output></output></label>
+    </div>
+    <div id="tab-controls" class="tab-body" hidden>
+      <div id="binds"></div>
+      <div class="row fixed"><span>Grab item / stock shelf</span><kbd class="mouse">LMB</kbd></div>
+      <div class="row fixed"><span>Drop item</span><kbd class="mouse">RMB</kbd></div>
+      <div class="row fixed"><span>Pause</span><kbd>Esc</kbd></div>
+      <button id="binds-reset" class="gbtn small alt">Reset to defaults</button>
+    </div>
+    <button id="options-back" class="gbtn small">Back</button>
+  </div>
+</div>
+
+<div id="resume-click" class="screen dim" hidden>
+  <div class="panel-card"><h2 class="panel-title">CLICK TO RESUME</h2></div>
+</div>
+
+<div id="win" class="screen dim" hidden>
+  <div class="panel-card">
+    <div class="eyebrow">SHIFT COMPLETE</div>
+    <h2 class="panel-title">The store's back in order!</h2>
+    <p class="tagline">Dale unlocks the doors. You can clock out.</p>
     <div id="win-stats" class="stats"></div>
-    <button id="btn-again" class="btn">Work Another Shift</button>
+    <div class="menu-stack">
+      <button id="btn-again" class="gbtn">Work Another Shift</button>
+      <button id="btn-win-title" class="gbtn alt">Title Screen</button>
+    </div>
   </div>
 </div>
 
-<div id="storm-caption" hidden>THE STORM HITS</div>
+<div id="storm-caption" hidden>TORNADO!</div>
 
-<!-- upgrade menu -->
-<div id="menu" hidden>
-  <div class="menu-card">
-    <div class="menu-head">
-      <div>
-        <p class="eyebrow">Office · Dale, General Manager</p>
+<!-- GM upgrade shop -->
+<div id="menu" class="screen dim" hidden>
+  <div class="panel-card shop">
+    <div class="shop-head">
+      <div class="portrait"><div class="p-hair"></div><div class="p-face"></div><div class="p-tie"></div></div>
+      <div class="shop-talk">
+        <div class="nameplate">DALE · GENERAL MANAGER</div>
         <p id="menu-quote" class="quote"></p>
       </div>
-      <div class="menu-credits"><span id="menu-credits">0</span> credits</div>
+      <div class="wallet"><span id="menu-credits">0</span><small>CREDITS</small></div>
     </div>
     <div id="menu-tree"></div>
-    <button id="menu-close" class="btn">Back to work (E)</button>
+    <button id="menu-close" class="gbtn small">Back to Work</button>
   </div>
 </div>
 
 <!-- HUD -->
 <div id="hud" hidden>
-  <div id="crosshair"></div>
+  <div id="crosshair"><i></i><i></i></div>
   <div id="aim-wrap"><div id="aim"></div><div id="aim-sub"></div></div>
+  <div id="popups"></div>
 
-  <div class="panel top-left">
-    <div class="stat-big"><span id="hud-shelved">0 / 1500</span> shelved</div>
+  <div class="hud-panel top-left">
+    <div class="stat-line"><span class="big" id="hud-shelved">0</span><span class="of">/ 1500 shelved</span></div>
     <div class="bar"><div id="hud-bar"></div></div>
-    <div class="row"><span>Credits <b id="hud-credits">0</b></span><span>Score <b id="hud-score">0</b></span><span id="hud-time">0:00</span></div>
+    <div class="chips">
+      <span class="chip gold">$ <b id="hud-credits">0</b></span>
+      <span class="chip">★ <b id="hud-score">0</b></span>
+      <span class="chip">⏱ <b id="hud-time">0:00</b></span>
+    </div>
     <div id="hud-combo"></div>
   </div>
 
-  <div class="panel bottom-right">
+  <div id="notices"></div>
+  <div id="hotbar">
     <div id="hand"></div>
     <div id="hud-cart" hidden></div>
   </div>
+  <div id="stamina" hidden><div id="stamina-fill"></div></div>
 
-  <div id="stamina"><div id="stamina-fill"></div></div>
+  <div id="radar" hidden><div id="radar-arrow">➤</div><div id="radar-dist"></div></div>
+  <div id="banner"></div>
+  <div id="checklist" class="hud-panel" hidden></div>
+  <div id="reset-hint" hidden>Press again to reset the whole game</div>
+  <div id="fps" hidden></div>
 
-  <div id="radar" hidden><div id="radar-arrow">▲</div><div id="radar-dist"></div></div>
-
-  <div id="toasts"></div>
-  <div id="checklist" class="panel" hidden></div>
-  <div id="reset-hint" hidden>Press R again to reset the game</div>
+  <div id="dialog" class="dialog-panel" hidden>
+    <div class="nameplate">DALE · GM</div>
+    <div id="dialog-text" class="dialog-body"></div>
+  </div>
   <div id="flash"></div>
 </div>
 

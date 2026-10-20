@@ -1,226 +1,294 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { addStaticBox, addSensorBox, G } from './physics.js';
 import { makeSlotTag, drawSlotTag, signTexture, floorTexture, textTexture } from './textures.js';
+import { TOTAL_ITEMS } from './catalog.js';
 
 // Shelf geometry (meters)
-export const TIERS = [0.14, 0.64, 1.14, 1.64]; // top surface of each shelf board
-const DEPTH = 0.55;       // one face of a gondola, front to spine
-const SPINE = 0.06;
-const GONDOLA_H = 2.15;
-export const AISLE = 3.2;
-const PITCH = DEPTH * 2 + SPINE + AISLE;
-const GAP = 0.02;         // space between items on a shelf
+const TIER_BASE = 0.12;   // kick plate height = top of the bottom shelf
+const DEPTH = 0.42;       // one face of a gondola, front to spine
+const SPINE = 0.05;
+const GW = DEPTH * 2 + SPINE;
+export const AISLE = 2.8;
+const PITCH = GW + AISLE;
+const GAP = 0.015;        // minimum space between items on a shelf
+const CLEAR = 0.09;       // headroom above the tallest item in a tier
+const BOARD = 0.03;
+const MAX_H = 2.3;        // tallest a shelf face may get
 const Z0 = 0;             // aisles start here and run toward +z
 const WALL_H = 4.6;
+const CELL = 0.46;        // grid spacing of the tornado pile
 
-const slotWidth = (p) => p.count * (p.fp.w + GAP) + 0.04;
+const runWidth = (p) => p.count * (p.fp.w + GAP);
 
-// First-fit decreasing into 4 tiers of length L. Null if it doesn't fit.
-function packFace(list, L) {
-  const tiers = TIERS.map(() => ({ used: 0, slots: [] }));
-  const sorted = [...list].sort((a, b) => slotWidth(b) - slotWidth(a));
-  for (const p of sorted) {
-    const w = slotWidth(p);
-    const tier = tiers.find((t) => t.used + w <= L);
-    if (!tier) return null;
-    tier.slots.push({ p, w });
-    tier.used += w;
+// One section = one bay of shelving. Use as many shelf levels as fit under
+// MAX_H (tallest products on the bottom, short products get more levels),
+// balancing the length of each level so the bay comes out full.
+function layoutSection(sec) {
+  const sorted = [...sec.list].sort((a, b) => b.fp.h - a.fp.h);
+  const total = sorted.reduce((a, p) => a + runWidth(p), 0);
+  for (let n = 8; n >= 2; n--) {
+    const target = total / n;
+    const tiers = Array.from({ length: n }, () => ({ items: [], used: 0 }));
+    let cum = 0;
+    for (const p of sorted) {
+      const w = runWidth(p);
+      const t = Math.min(n - 1, Math.floor((cum + w / 2) / target));
+      tiers[t].items.push(p);
+      tiers[t].used += w;
+      cum += w;
+    }
+    if (tiers.some((t) => !t.items.length)) continue;
+    let y = TIER_BASE;
+    for (const t of tiers) {
+      t.y = y;
+      t.h = Math.max(...t.items.map((p) => p.fp.h)) + CLEAR;
+      y += t.h + BOARD;
+    }
+    if (y > MAX_H) continue;
+    return { sec, tiers, height: y, width: Math.max(...tiers.map((t) => t.used)) + 0.08 };
   }
-  return tiers;
+  throw new Error(`${sec.name} doesn't fit on a shelf`);
+}
+
+// Spread the bays over FACES gondola faces so every face is about the same length.
+const FACES = 8;
+function packFaces(bays) {
+  const faces = Array.from({ length: FACES }, () => ({ bays: [], len: 0 }));
+  for (const b of [...bays].sort((a, b) => b.width - a.width)) {
+    const f = faces.reduce((m, x) => (x.len < m.len ? x : m));
+    f.bays.push(b);
+    f.len += b.width;
+  }
+  for (const f of faces) f.bays.sort((a, b) => a.sec.index - b.sec.index);
+  return faces;
+}
+
+// Grid cells for the tornado pile: an oval mound, up to 4 items high in the middle.
+function makeHeap() {
+  const pts = [];
+  for (let x = -14; x <= 14; x += CELL) {
+    for (let z = -10; z <= 10; z += CELL) pts.push({ x, z, d: (x / 1.35) ** 2 + z * z });
+  }
+  pts.sort((a, b) => a.d - b.d);
+  let n = 400;
+  const capAt = (i, n) => 1 + Math.floor(3.2 * (1 - i / n));
+  for (;;) {
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += capAt(i, n);
+    if (sum >= TOTAL_ITEMS) break;
+    n += 10;
+  }
+  const cells = pts.slice(0, n).map((c, i) => ({ x: c.x, z: c.z, cap: capAt(i, n) }));
+  return {
+    cells,
+    ax: Math.max(...cells.map((c) => Math.abs(c.x))) + CELL,
+    bz: Math.max(...cells.map((c) => Math.abs(c.z))) + CELL,
+  };
 }
 
 export function buildStore(scene, sections) {
-  const gondolas = Math.ceil(sections.length / 2);
-  const gx = (g) => (g - (gondolas - 1) / 2) * PITCH;
+  // ---------- layout: one full bay per section, packed onto 8 faces ----------
+  const faces = packFaces(sections.map(layoutSection));
+  const L = Math.max(...faces.map((f) => f.len));
 
-  let L = 5;
-  let packs;
-  for (;;) {
-    packs = sections.map((s) => packFace(s.list, L));
-    if (packs.every(Boolean)) break;
-    L += 0.25;
-  }
+  const heap = makeHeap();
+  const PLAZA = heap.ax * 2 + 2.4;
+  const gondolas = FACES / 2;
+  const perBank = Math.ceil(gondolas / 2);
+  const gxs = [];
+  for (let j = perBank - 1; j >= 0; j--) gxs.push(-(PLAZA / 2 + GW / 2 + j * PITCH));
+  for (let j = 0; j < gondolas - perBank; j++) gxs.push(PLAZA / 2 + GW / 2 + j * PITCH);
 
-  const halfG = DEPTH + SPINE / 2;
-  const bounds = {
-    xL: gx(0) - halfG - 3.4,
-    xR: gx(gondolas - 1) + halfG + 3.4,
-    zF: -11,
-    zB: Z0 + L + 4,
-  };
+  const xR = Math.max(...gxs.map(Math.abs)) + GW / 2 + AISLE + 0.3;
+  const bounds = { xL: -xR, xR, zF: -10, zB: Z0 + L + 4.5 };
   const W = bounds.xR - bounds.xL;
   const D = bounds.zB - bounds.zF;
-  const cx = (bounds.xL + bounds.xR) / 2;
   const cz = (bounds.zF + bounds.zB) / 2;
+  heap.cx = 0;
+  heap.cz = Z0 + L / 2;
 
-  // ---------- materials ----------
+  // ---------- static geometry, merged into one draw call ----------
+  const solid = [];
+  const block = (w, h, d, x, y, z, color, collide = true) => {
+    const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
+    g.translate(x, y, z);
+    const c = new THREE.Color(color);
+    const n = g.attributes.position.count;
+    const cols = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b; }
+    g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+    g.deleteAttribute('uv');
+    solid.push(g);
+    if (collide) addStaticBox(x, y, z, w / 2, h / 2, d / 2);
+  };
+
   const mat = {
-    board: new THREE.MeshStandardMaterial({ color: 0xc9ced4, metalness: 0.4, roughness: 0.5 }),
-    spine: new THREE.MeshStandardMaterial({ color: 0xe7e3da, roughness: 0.8 }),
-    cap: new THREE.MeshStandardMaterial({ color: 0x5b6470, roughness: 0.6 }),
     wall: new THREE.MeshStandardMaterial({ color: 0xe9e2cf, roughness: 0.9 }),
-    trim: new THREE.MeshStandardMaterial({ color: 0x2e7d4f, roughness: 0.7 }),
-    counter: new THREE.MeshStandardMaterial({ color: 0x3b4252, roughness: 0.6 }),
-    belt: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }),
-    desk: new THREE.MeshStandardMaterial({ color: 0x7a5434, roughness: 0.7 }),
     fixture: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff6e0, emissiveIntensity: 1.2 }),
     window: new THREE.MeshStandardMaterial({ color: 0x0b1018, emissive: 0x1a2a40, emissiveIntensity: 0.6, roughness: 0.2 }),
+    door: new THREE.MeshStandardMaterial({ color: 0x0b1018, emissive: 0x1a2a40, emissiveIntensity: 0.5 }),
   };
 
-  const box = (w, h, d, m, x, y, z, collide = true, shadow = true) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-    mesh.position.set(x, y, z);
-    mesh.castShadow = shadow;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    if (collide) addStaticBox(x, y, z, w / 2, h / 2, d / 2);
-    return mesh;
-  };
-
-  // ---------- floor, walls, ceiling ----------
+  // floor
   const ftex = floorTexture();
   ftex.repeat.set(W / 2.4, D / 2.4);
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(W, D),
-    new THREE.MeshStandardMaterial({ map: ftex, roughness: 0.35, metalness: 0.05 }),
-  );
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ map: ftex, roughness: 0.35, metalness: 0.05 }));
   floor.rotation.x = -Math.PI / 2;
-  floor.position.set(cx, 0, cz);
+  floor.position.set(0, 0, cz);
   floor.receiveShadow = true;
   scene.add(floor);
-  addStaticBox(cx, -0.5, cz, W / 2 + 2, 0.5, D / 2 + 2);
+  addStaticBox(0, -0.5, cz, W / 2 + 2, 0.5, D / 2 + 2);
 
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ color: 0x3a3d42 }));
   ceil.rotation.x = Math.PI / 2;
-  ceil.position.set(cx, WALL_H, cz);
+  ceil.position.set(0, WALL_H, cz);
   scene.add(ceil);
 
+  // walls (own mesh, they don't need to cast shadows)
   const T = 0.5;
-  box(W + T * 2, WALL_H, T, mat.wall, cx, WALL_H / 2, bounds.zF - T / 2, true, false);
-  box(W + T * 2, WALL_H, T, mat.wall, cx, WALL_H / 2, bounds.zB + T / 2, true, false);
-  box(T, WALL_H, D, mat.wall, bounds.xL - T / 2, WALL_H / 2, cz, true, false);
-  box(T, WALL_H, D, mat.wall, bounds.xR + T / 2, WALL_H / 2, cz, true, false);
-  // green trim band along the walls
-  box(W, 0.3, 0.02, mat.trim, cx, 3.2, bounds.zB - 0.01, false, false);
-  box(0.02, 0.3, D, mat.trim, bounds.xL + 0.01, 3.2, cz, false, false);
-  box(0.02, 0.3, D, mat.trim, bounds.xR - 0.01, 3.2, cz, false, false);
+  const walls = [];
+  const wall = (w, h, d, x, y, z) => {
+    walls.push(new THREE.BoxGeometry(w, h, d).translate(x, y, z));
+    addStaticBox(x, y, z, w / 2, h / 2, d / 2);
+  };
+  wall(W + T * 2, WALL_H, T, 0, WALL_H / 2, bounds.zF - T / 2);
+  wall(W + T * 2, WALL_H, T, 0, WALL_H / 2, bounds.zB + T / 2);
+  wall(T, WALL_H, D, bounds.xL - T / 2, WALL_H / 2, cz);
+  wall(T, WALL_H, D, bounds.xR + T / 2, WALL_H / 2, cz);
+  const wallMesh = new THREE.Mesh(mergeGeometries(walls), mat.wall);
+  wallMesh.receiveShadow = true;
+  scene.add(wallMesh);
+  block(W, 0.3, 0.02, 0, 3.2, bounds.zB - 0.01, 0x2e7d4f, false);
+  block(0.02, 0.3, D, bounds.xL + 0.01, 3.2, cz, 0x2e7d4f, false);
+  block(0.02, 0.3, D, bounds.xR - 0.01, 3.2, cz, 0x2e7d4f, false);
 
-  // ---------- front: windows, locked doors ----------
-  const windows = [];
+  // front windows + locked doors
+  const winGeo = [];
   for (let x = bounds.xL + 3; x < bounds.xR - 2; x += 4.2) {
-    if (Math.abs(x - cx) < 2.5) continue;
-    const pane = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 2.2), mat.window);
-    pane.position.set(x, 1.7, bounds.zF + 0.01);
-    scene.add(pane);
-    windows.push(pane);
+    if (Math.abs(x) < 2.5) continue;
+    winGeo.push(new THREE.PlaneGeometry(3.4, 2.2).translate(x, 1.7, bounds.zF + 0.01));
   }
-  const doorMat = new THREE.MeshStandardMaterial({ color: 0x0b1018, emissive: 0x1a2a40, emissiveIntensity: 0.5 });
-  for (const dx of [-0.8, 0.8]) {
-    const door = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.5), doorMat);
-    door.position.set(cx + dx, 1.25, bounds.zF + 0.01);
-    scene.add(door);
-  }
-  const locked = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.6, 0.4),
-    new THREE.MeshBasicMaterial({ map: textTexture('LOCKED', { bg: '#b3261e', font: 'bold 38px Arial' }) }),
-  );
-  locked.position.set(cx, 2.75, bounds.zF + 0.02);
+  scene.add(new THREE.Mesh(mergeGeometries(winGeo), mat.window));
+  scene.add(new THREE.Mesh(mergeGeometries([-0.8, 0.8].map((dx) => new THREE.PlaneGeometry(1.5, 2.5).translate(dx, 1.25, bounds.zF + 0.01))), mat.door));
+  const locked = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4),
+    new THREE.MeshBasicMaterial({ map: textTexture('LOCKED', { bg: '#b3261e', font: 'bold 38px Arial' }) }));
+  locked.position.set(0, 2.75, bounds.zF + 0.02);
   scene.add(locked);
 
-  // ---------- checkouts ----------
-  for (const x of [-9, -3, 3, 9]) {
-    const kx = cx + x;
-    box(0.9, 0.95, 2.6, mat.counter, kx, 0.475, -5);
-    box(0.7, 0.02, 2.4, mat.belt, kx, 0.96, -5, false, false);
-    box(0.35, 0.3, 0.3, mat.cap, kx + 0.25, 1.1, -6.1, false);
+  // checkouts on the front right, office on the front left (the middle stays clear)
+  for (let k = 0; k < 4; k++) {
+    const kx = PLAZA / 2 + 1.5 + k * 3.2;
+    if (kx > bounds.xR - 1.5) break;
+    block(0.9, 0.95, 2.6, kx, 0.475, -5.5, 0x3b4252);
+    block(0.7, 0.02, 2.4, kx, 0.96, -5.5, 0x111111, false);
+    block(0.35, 0.3, 0.3, kx + 0.25, 1.1, -6.6, 0x5b6470, false);
   }
-
-  // ---------- GM office corner ----------
-  const office = { x: bounds.xL + 3.6, z: -8.6 };
-  box(2.4, 0.9, 0.9, mat.desk, office.x, 0.45, office.z);
-  box(0.5, 0.35, 0.05, mat.cap, office.x - 0.5, 1.08, office.z - 0.2, false); // monitor
-  const officeSign = new THREE.Mesh(
-    new THREE.PlaneGeometry(3, 0.75),
-    new THREE.MeshBasicMaterial({ map: signTexture('OFFICE', 'GENERAL MANAGER', '#2e7d4f') }),
-  );
+  const office = { x: bounds.xL + 3.6, z: -7.6 };
+  block(2.4, 0.9, 0.9, office.x, 0.45, office.z, 0x7a5434);
+  block(0.5, 0.35, 0.05, office.x - 0.5, 1.08, office.z - 0.2, 0x2b2f3a, false);
+  const officeSign = new THREE.Mesh(new THREE.PlaneGeometry(3, 0.75),
+    new THREE.MeshBasicMaterial({ map: signTexture('OFFICE', 'GENERAL MANAGER', '#2e7d4f') }));
   officeSign.position.set(office.x, 3.0, bounds.zF + 0.02);
   scene.add(officeSign);
 
-  // ---------- gondolas + slots ----------
+  // ---------- gondolas, shelves, slots ----------
   const slots = [];
-  const capGeo = new THREE.BoxGeometry(DEPTH * 2 + SPINE, GONDOLA_H, 0.06);
-  for (let g = 0; g < gondolas; g++) {
-    const x = gx(g);
-    box(SPINE, GONDOLA_H, L, mat.spine, x, GONDOLA_H / 2, Z0 + L / 2);
-    box(DEPTH * 2 + SPINE, 0.05, L, mat.cap, x, GONDOLA_H + 0.025, Z0 + L / 2);
-    for (const z of [Z0 - 0.03, Z0 + L + 0.03]) {
-      const cap = new THREE.Mesh(capGeo, mat.cap);
-      cap.position.set(x, GONDOLA_H / 2, z);
-      cap.castShadow = true;
-      scene.add(cap);
-      addStaticBox(x, GONDOLA_H / 2, z, DEPTH + SPINE / 2, GONDOLA_H / 2, 0.03);
-    }
-  }
+  const gHeight = gxs.map((_, g) => Math.max(...[faces[g * 2], faces[g * 2 + 1]].flatMap((f) => f.bays.map((b) => b.height))) + 0.08);
+  gxs.forEach((x, g) => {
+    const H = gHeight[g];
+    block(SPINE, H, L, x, H / 2, Z0 + L / 2, 0xe7e3da);
+    block(GW, 0.05, L, x, H + 0.025, Z0 + L / 2, 0x5b6470);
+    for (const z of [Z0 - 0.03, Z0 + L + 0.03]) block(GW, H, 0.06, x, H / 2, z, 0x5b6470);
+  });
 
-  sections.forEach((sec, i) => {
+  // aisle numbers (the aisle in the middle is the main aisle)
+  const aisleOf = (x, side) => x + side * (GW / 2 + AISLE / 2);
+  const centers = [];
+  faces.forEach((_, i) => {
+    const c = aisleOf(gxs[Math.floor(i / 2)], i % 2 ? 1 : -1);
+    if (Math.abs(c) > PLAZA / 2 && !centers.some((v) => Math.abs(v - c) < 0.5)) centers.push(c);
+  });
+  centers.sort((a, b) => a - b);
+
+  faces.forEach((face, i) => {
     const g = Math.floor(i / 2);
     const side = i % 2 ? 1 : -1;
-    const x = gx(g);
+    const x = gxs[g];
     const shelfX = x + side * (SPINE / 2 + DEPTH / 2);
     const frontX = x + side * (SPINE / 2 + DEPTH);
-    sec.face = { gondola: g, side, frontX, z0: Z0, z1: Z0 + L };
+    const ac = aisleOf(x, side);
+    const ai = centers.findIndex((v) => Math.abs(v - ac) < 0.5);
+    const sub = ai < 0 ? 'MAIN AISLE' : `AISLE ${ai + 1}`;
+    // stretch this face's bays so they fill the whole gondola length
+    const stretch = L / face.len;
+    let zBay = Z0;
 
-    TIERS.forEach((top, t) => {
-      const thick = t === 0 ? top : 0.05;
-      box(DEPTH, thick, L, mat.board, shelfX, top - thick / 2, Z0 + L / 2);
-      // shelf edge strip in the section color
-      box(0.02, 0.04, L, new THREE.MeshStandardMaterial({ color: sec.color }), frontX, top - 0.02, Z0 + L / 2, false, false);
-    });
+    face.bays.forEach((bay) => {
+      const { sec } = bay;
+      const BW = bay.width * stretch;
+      const zMid = zBay + BW / 2;
+      sec.face = { gondola: g, side, frontX };
 
-    // header sign above the face
-    const sign = new THREE.Mesh(
-      new THREE.PlaneGeometry(Math.min(L - 0.4, 4.2), 1.05),
-      new THREE.MeshBasicMaterial({ map: signTexture(sec.name.toUpperCase(), `AISLE ${g + 1 + (side > 0 ? 1 : 0)}`, sec.color) }),
-    );
-    sign.position.set(x + side * 0.02, GONDOLA_H + 0.6, Z0 + L / 2);
-    sign.rotation.y = side * Math.PI / 2;
-    scene.add(sign);
+      // section divider + header sign over this bay
+      block(DEPTH, bay.height, 0.03, shelfX, bay.height / 2, zBay + BW, 0x8a929c);
+      const sw = Math.min(BW - 0.12, 3.4);
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(sw, sw / 4),
+        new THREE.MeshBasicMaterial({ map: signTexture(sec.name.toUpperCase(), sub, sec.color) }));
+      sign.position.set(x + side * 0.02, gHeight[g] + 0.08 + sw / 8, zMid);
+      sign.rotation.y = side * Math.PI / 2;
+      scene.add(sign);
 
-    packs[i].forEach((tier, t) => {
-      const slack = (L - tier.used) / (tier.slots.length + 1);
-      let z = Z0 + slack;
-      for (const { p, w } of tier.slots) {
-        const zCenter = z + w / 2;
-        const slot = {
-          product: p, section: sec, side, tier: t,
-          x: shelfX, y: TIERS[t], zStart: z + 0.02, pitch: p.fp.w + GAP,
-          zCenter, width: w, frontX,
-          center: new THREE.Vector3(shelfX, TIERS[t] + 0.24, zCenter),
-        };
-        slot.collider = addSensorBox(shelfX, TIERS[t] + 0.24, zCenter, DEPTH / 2, 0.23, w / 2, G.SLOT);
+      bay.tiers.forEach((tier, t) => {
+        const y = tier.y;
+        if (t === 0) block(DEPTH, TIER_BASE, BW, shelfX, TIER_BASE / 2, zMid, 0xb8bec6);
+        else block(DEPTH, BOARD, BW, shelfX, y - BOARD / 2, zMid, 0xc9ced4);
+        block(0.012, 0.07, BW, frontX + side * 0.006, y - 0.035, zMid, sec.color, false);
 
-        const tagW = Math.min(w - 0.03, 1.0);
-        const tag = makeSlotTag(tagW, 0.09);
-        const tagMesh = new THREE.Mesh(new THREE.PlaneGeometry(tagW, 0.09), new THREE.MeshBasicMaterial({ map: tag.texture }));
-        tagMesh.position.set(frontX + side * 0.004, t === 0 ? 0.08 : TIERS[t] - 0.07, zCenter);
-        tagMesh.rotation.y = side * Math.PI / 2;
-        scene.add(tagMesh);
-        slot.tag = tag;
-        slot.tagMesh = tagMesh;
-        p.slot = slot;
-        drawSlotTag(tag, p);
-        slots.push(slot);
-        z += w + slack;
-      }
+        // spread the leftover length evenly between items so the shelf looks full
+        const n = tier.items.reduce((a, p) => a + p.count, 0);
+        const extra = (BW - 0.08 - tier.items.reduce((a, p) => a + p.count * p.fp.w, 0)) / n;
+        let z = zBay + 0.04;
+        for (const p of tier.items) {
+          const pitch = p.fp.w + extra;
+          const width = p.count * pitch;
+          const zCenter = z + width / 2;
+          const slot = {
+            product: p, section: sec, side, tier: t,
+            x: shelfX, y, zStart: z, pitch, zCenter, width, frontX, height: tier.h,
+            center: new THREE.Vector3(shelfX, y + tier.h / 2, zCenter),
+          };
+          // sticks out 6 cm past the shelf edge so it's easy to aim at
+          slot.collider = addSensorBox(shelfX + side * 0.03, y + tier.h / 2 - 0.01, zCenter, DEPTH / 2 + 0.03, tier.h / 2 - 0.02, width / 2, G.SLOT);
+
+          const tagW = Math.min(width - 0.02, 0.9);
+          const tag = makeSlotTag(tagW, 0.06);
+          const tagMesh = new THREE.Mesh(new THREE.PlaneGeometry(tagW, 0.06), new THREE.MeshBasicMaterial({ map: tag.texture }));
+          tagMesh.position.set(frontX + side * 0.014, t === 0 ? 0.06 : y - 0.035, zCenter);
+          tagMesh.rotation.y = side * Math.PI / 2;
+          scene.add(tagMesh);
+          slot.tag = tag;
+          p.slot = slot;
+          drawSlotTag(tag, p);
+          slots.push(slot);
+          z += width;
+        }
+      });
+      zBay += BW;
     });
   });
+
+  const solidMesh = new THREE.Mesh(mergeGeometries(solid), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.15 }));
+  solidMesh.castShadow = true;
+  solidMesh.receiveShadow = true;
+  scene.add(solidMesh);
 
   // ---------- lights ----------
   const hemi = new THREE.HemisphereLight(0xfff8ee, 0x6d6457, 1.25);
   scene.add(hemi);
   const dir = new THREE.DirectionalLight(0xffffff, 1.3);
-  dir.position.set(cx + 8, 18, cz - 6);
-  dir.target.position.set(cx, 0, cz);
+  dir.position.set(8, 18, cz - 6);
+  dir.target.position.set(0, 0, cz);
   dir.castShadow = true;
   dir.shadow.mapSize.set(2048, 2048);
   const sc = dir.shadow.camera;
@@ -229,22 +297,14 @@ export function buildStore(scene, sections) {
   dir.shadow.bias = -0.0008;
   scene.add(dir, dir.target);
 
-  const fixtureGeo = new THREE.BoxGeometry(0.28, 0.06, L + 6);
-  for (let g = 0; g <= gondolas; g++) {
-    const fx = g === 0 ? gx(0) - PITCH / 2 : gx(g - 1) + PITCH / 2;
-    const f = new THREE.Mesh(fixtureGeo, mat.fixture);
-    f.position.set(fx, WALL_H - 0.1, Z0 + L / 2);
-    scene.add(f);
-  }
-  for (let x = bounds.xL + 3; x < bounds.xR - 2; x += 5) {
-    const f = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.06, 0.28), mat.fixture);
-    f.position.set(x, WALL_H - 0.1, -5.5);
-    scene.add(f);
-  }
+  const fixtures = [];
+  for (const x of [...centers, -PLAZA / 4, PLAZA / 4]) fixtures.push(new THREE.BoxGeometry(0.28, 0.06, L + 6).translate(x, WALL_H - 0.1, Z0 + L / 2));
+  for (let x = bounds.xL + 3; x < bounds.xR - 2; x += 5) fixtures.push(new THREE.BoxGeometry(2.4, 0.06, 0.28).translate(x, WALL_H - 0.1, -5.5));
+  scene.add(new THREE.Mesh(mergeGeometries(fixtures), mat.fixture));
 
   return {
-    slots, bounds, L, office,
-    spawn: new THREE.Vector3(cx, 0.9, -2),
-    lights: { hemi, dir, fixtureMat: mat.fixture, windowMat: mat.window, doorMat },
+    slots, bounds, L, office, heap,
+    spawn: new THREE.Vector3(0, 0.9, -8),
+    lights: { hemi, dir, fixtureMat: mat.fixture, windowMat: mat.window, doorMat: mat.door },
   };
 }

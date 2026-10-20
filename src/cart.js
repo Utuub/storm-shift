@@ -3,6 +3,7 @@ import { RAPIER, world, groups, G } from './physics.js';
 import { textTexture } from './textures.js';
 
 const HALF = { x: 0.32, y: 0.45, z: 0.5 };
+const UP = new THREE.Vector3(0, 1, 0);
 
 // Shopping cart (a GM upgrade). It's a kinematic body: it stays put when
 // parked and plows loose items out of the way while you push it.
@@ -15,6 +16,8 @@ export class Cart {
     this.pushing = false;
     this.yaw = 0;
     this.pos = new THREE.Vector3();
+    this.prev = new THREE.Vector3();
+    this.prevYaw = 0;
 
     const g = new THREE.Group();
     const wire = new THREE.MeshStandardMaterial({ color: 0xb8c0c8, metalness: 0.8, roughness: 0.3, transparent: true, opacity: 0.45 });
@@ -48,8 +51,9 @@ export class Cart {
     this.label.scale.set(0.5, 0.17, 1);
     this.label.position.set(0, 1.3, 0);
     g.add(this.label);
-    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    // no castShadow: the shadow map is only drawn once, and the cart moves
     this.group = g;
+    this.q = new THREE.Quaternion();
     this.updateFill();
   }
 
@@ -57,7 +61,8 @@ export class Cart {
     if (this.active) return;
     this.active = true;
     this.pos.copy(pos);
-    this.yaw = yaw;
+    this.prev.copy(pos);
+    this.yaw = this.prevYaw = yaw;
     this.body = world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(pos.x, HALF.y, pos.z),
     );
@@ -105,7 +110,10 @@ export class Cart {
 
   // Pushed carts ride in front of the player, clamped inside the store.
   step(player, bounds) {
-    if (!this.active || !this.pushing) return;
+    if (!this.active) return;
+    this.prev.copy(this.pos);
+    this.prevYaw = this.yaw;
+    if (!this.pushing) return;
     const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
     this.pos.set(
       THREE.MathUtils.clamp(player.pos.x + fx * 1.05, bounds.xL + 0.6, bounds.xR - 0.6),
@@ -113,15 +121,21 @@ export class Cart {
       THREE.MathUtils.clamp(player.pos.z + fz * 1.05, bounds.zF + 0.6, bounds.zB - 0.6),
     );
     this.yaw = player.yaw;
-    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
+    const q = this.q.setFromAxisAngle(UP, this.yaw);
     this.body.setNextKinematicTranslation({ x: this.pos.x, y: HALF.y, z: this.pos.z });
     this.body.setNextKinematicRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
   }
 
-  syncMesh() {
+  // alpha blends between physics steps, same as the camera, so the cart doesn't judder
+  syncMesh(alpha = 1) {
     if (!this.active) return;
-    this.group.position.set(this.pos.x, 0, this.pos.z);
-    this.group.rotation.y = this.yaw;
+    this.group.position.set(
+      this.prev.x + (this.pos.x - this.prev.x) * alpha, 0,
+      this.prev.z + (this.pos.z - this.prev.z) * alpha,
+    );
+    let dy = this.yaw - this.prevYaw;
+    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    this.group.rotation.y = this.prevYaw + dy * alpha;
     this.label.visible = !this.pushing; // the HUD shows the count while pushing
   }
 }

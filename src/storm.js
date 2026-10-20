@@ -1,55 +1,97 @@
 import * as THREE from 'three';
 import { sfx } from './audio.js';
-import { AISLE } from './store.js';
+import { modelKey } from './models.js';
 
-const DURATION = 7;      // seconds of storm before play starts
-const SWEEP = 3.6;       // time for the wind front to cross the store
+const UPRIGHT = new Set(['chicken', 'croissant', 'muffin', 'meat', 'deli', 'cheese', 'eggs', 'tortilla', 'buns', 'plates', 'tub']);
+
+const RELEASE = 4.5;     // seconds over which items get ripped off the shelves
+const MIN_LEN = 6.5;     // shortest the storm can be
 const GRAV = 9.81;
+const SWIRL = 1.6;       // radians of tornado spin added mid-flight
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _q = new THREE.Quaternion();
-const _dq = new THREE.Quaternion();
-const _axis = new THREE.Vector3();
+const _s = new THREE.Quaternion();
+const _p = new THREE.Vector3();
+const _fq = new THREE.Quaternion();
 
-// Pick how an item ends up lying on the floor: which face is down, plus a random spin.
-function restPose(p) {
+// How an item ends up lying in the pile: which face is down, turned to a
+// multiple of 90 degrees so it fits its grid cell. y = height of its center.
+function restPose(p, rand) {
   const s = p.shape.size;
   const q = new THREE.Quaternion();
   let y;
-  const r = Math.random();
+  const r = rand();
   if (p.shape.kind === 'ball') {
-    q.setFromEuler(new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6));
+    q.setFromEuler(new THREE.Euler(rand() * 6, rand() * 6, rand() * 6));
     return { q, y: s[0] };
   }
   if (p.shape.kind === 'cyl') {
-    if (r < 0.35) { y = s[1] / 2; }
+    if (r < 0.35 || UPRIGHT.has(modelKey(p).split(':')[0])) y = s[1] / 2;
     else { q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2); y = s[0]; }
-  } else if (r < 0.25) { y = s[1] / 2; }
-  else if (r < 0.75) { q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2 * (Math.random() < 0.5 ? 1 : -1)); y = s[2] / 2; }
-  else { q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2); y = s[0] / 2; }
-  q.premultiply(_q.setFromAxisAngle(UP, Math.random() * Math.PI * 2));
+  } else if (UPRIGHT.has(modelKey(p).split(':')[0])) {
+    y = s[1] / 2; // trays of food land right side up
+  } else {
+    // flat sides are more likely to end up down: weight each face by 1/size^2
+    const wy = 1 / s[1] ** 2, wz = 1 / s[2] ** 2, wx = 1 / s[0] ** 2;
+    const pick = r * (wx + wy + wz);
+    if (pick < wy) y = s[1] / 2;
+    else if (pick < wy + wz) { q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2 * (rand() < 0.5 ? 1 : -1)); y = s[2] / 2; }
+    else { q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2); y = s[0] / 2; }
+  }
+  q.premultiply(_q.setFromAxisAngle(UP, Math.floor(rand() * 4) * Math.PI / 2 + (rand() - 0.5) * 0.25));
   return { q, y };
 }
 
-// Opening cutscene: a wind front sweeps from the front windows to the back
-// wall, blowing every item off its shelf into the aisle, with flickering
-// lights and thunder. The flight is a cheap scripted fall (not Rapier) so
-// 1500 items can be in the air at once; each one becomes a resting physics
-// collider when it lands.
+function funnelTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, 256, 256);
+  for (let i = 0; i < 70; i++) {
+    const y = Math.random() * 256, x = Math.random() * 256, len = 40 + Math.random() * 140;
+    ctx.strokeStyle = `rgba(${150 + Math.random() * 60},${150 + Math.random() * 60},${160 + Math.random() * 60},${0.15 + Math.random() * 0.35})`;
+    ctx.lineWidth = 2 + Math.random() * 7;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + len, y + len * 0.15);
+    ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(3, 1);
+  return t;
+}
+
+// Opening cutscene: a tornado touches down in the middle of the store and
+// rips every item off its shelf into one big pile around it. The flight is
+// scripted (not Rapier) so all 1500 items can be in the air at once; each
+// item becomes a resting physics collider when it lands.
 export class Storm {
-  constructor(items, store, player) {
+  constructor(items, store, player, scene) {
     this.items = items;
     this.store = store;
     this.player = player;
     this.active = false;
-    this.flying = [];
+    this.flights = [];
+
+    const tex = funnelTexture();
+    const mk = (rt, rb, h, op) => new THREE.Mesh(
+      new THREE.CylinderGeometry(rt, rb, h, 28, 1, true),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide, color: 0x9aa3b0 }),
+    );
+    this.funnel = new THREE.Group();
+    this.funnelOuter = mk(4.8, 0.9, 4.5, 0.55);
+    this.funnelInner = mk(3.2, 0.5, 4.5, 0.45);
+    this.funnel.add(this.funnelOuter, this.funnelInner);
+    this.funnel.position.set(store.heap.cx, 2.25, store.heap.cz);
+    this.funnel.visible = false;
+    scene.add(this.funnel);
   }
 
   // Put every item back on its shelf (the store before the storm).
   restock() {
-    for (const p of this.items.products) {
-      p.items.forEach((item, k) => this.items.shelve(item, k));
-    }
+    for (const p of this.items.products) p.items.forEach((item, k) => this.items.shelve(item, k));
   }
 
   start(onDone) {
@@ -58,104 +100,95 @@ export class Storm {
     this.t = 0;
     this.active = true;
     this.nextBolt = 0.3;
-    this.flying = [];
-    const { zF, zB } = this.store.bounds;
-    this.zFront = zF;
-    this.zSpan = zB - zF;
-    // release order: by depth into the store, with a little jitter
-    this.queue = this.items.all
-      .map((item) => ({ item, z: item.p.slot.zCenter + Math.random() * 1.5 }))
-      .sort((a, b) => a.z - b.z);
-    this.qi = 0;
+    this.funnel.visible = true;
+    const rand = Math.random;
+    const { heap } = this.store;
+
+    // pile slots, bottom layer first so early items land underneath
+    const cells = heap.cells.map((c) => ({ ...c, h: 0 }));
+    const order = [];
+    for (let layer = 0; layer < 5; layer++) {
+      const row = cells.filter((c) => c.cap > layer);
+      for (let i = row.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [row[i], row[j]] = [row[j], row[i]]; }
+      order.push(...row);
+    }
+
+    // items closer to the funnel get pulled first
+    const list = this.items.all.map((item) => {
+      const s = item.p.slot;
+      const d = Math.hypot(s.x - heap.cx, s.zCenter - heap.cz);
+      return { item, release: 0.4 + (d / 26) * RELEASE * 0.75 + rand() * RELEASE * 0.25 };
+    }).sort((a, b) => a.release - b.release);
+
+    this.flights = list.map(({ item, release }, i) => {
+      const cell = order[i];
+      const pose = restPose(item.p, rand);
+      const to = new THREE.Vector3(heap.cx + cell.x + (rand() - 0.5) * 0.04, cell.h + pose.y, heap.cz + cell.z + (rand() - 0.5) * 0.04);
+      cell.h += pose.y * 2;
+      const from = new THREE.Vector3();
+      const fromQ = new THREE.Quaternion();
+      this.items.slotTransform(item.p, item.p.items.indexOf(item), from, fromQ);
+      const apex = Math.min(4.2, Math.max(from.y, to.y) + 1.6 + rand() * 1.2);
+      const vy = Math.sqrt(2 * GRAV * (apex - from.y));
+      const T = vy / GRAV + Math.sqrt(2 * (apex - to.y) / GRAV);
+      return {
+        item, release, from, fromQ, to, toQ: pose.q, vy, T,
+        spin: new THREE.Vector3(rand() - 0.5, rand() - 0.5, rand() - 0.5).normalize(),
+        spinRate: 5 + rand() * 9, launched: false, done: false,
+      };
+    });
+    this.landed = 0;
+    this.end = Math.max(MIN_LEN, ...this.flights.map((f) => f.release + f.T)) + 0.3;
     sfx.wind(true);
     sfx.thunder();
-  }
-
-  launch(item) {
-    const s = item.p.slot;
-    const pos = new THREE.Vector3();
-    const quat = new THREE.Quaternion();
-    this.items.slotTransform(item.p, item.p.items.indexOf(item), pos, quat);
-    const out = 2.5 + Math.random() * 4;
-    const pose = restPose(item.p);
-    const half = item.p.fp.w / 2 + 0.05;
-    const { zF, zB } = this.store.bounds;
-    const fly = {
-      item, pos, quat,
-      vel: new THREE.Vector3(s.side * out, 0.5 + Math.random() * 2.5, 1.5 + (Math.random() - 0.3) * 3),
-      spin: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize(),
-      spinRate: 6 + Math.random() * 12,
-      restQ: pose.q, restY: pose.y,
-      // stay inside this face's aisle so nothing lands inside a shelf
-      xa: Math.min(s.frontX, s.frontX + s.side * AISLE) + half,
-      xb: Math.max(s.frontX, s.frontX + s.side * AISLE) - half,
-      za: zF + 0.4, zb: zB - 0.4,
-      grounded: 0,
-    };
-    this.items.setFlying(item);
-    this.flying.push(fly);
-  }
-
-  // Integrate one flying item. Returns true once it has settled.
-  fly(f, dt) {
-    const { pos, vel } = f;
-    vel.y -= GRAV * dt;
-    pos.addScaledVector(vel, dt);
-    const inShelf = f.item.p.slot.side > 0 ? pos.x < f.xa : pos.x > f.xb;
-    if (!inShelf) {
-      if (pos.x < f.xa) { pos.x = f.xa; vel.x = Math.abs(vel.x) * 0.35; }
-      if (pos.x > f.xb) { pos.x = f.xb; vel.x = -Math.abs(vel.x) * 0.35; }
-    }
-    if (pos.z < f.za) { pos.z = f.za; vel.z = Math.abs(vel.z) * 0.35; }
-    if (pos.z > f.zb) { pos.z = f.zb; vel.z = -Math.abs(vel.z) * 0.35; }
-
-    if (pos.y <= f.restY) {
-      if (inShelf) {
-        // fell straight down at the shelf face: nudge it out into the aisle
-        pos.x = f.item.p.slot.side > 0 ? f.xa : f.xb;
-      }
-      pos.y = f.restY;
-      if (vel.y < -1.2) {
-        vel.y = -vel.y * 0.3;
-        vel.x *= 0.6; vel.z *= 0.6;
-        f.spinRate *= 0.6;
-      } else {
-        vel.y = 0;
-        f.grounded += dt;
-      }
-    }
-    if (f.grounded > 0) {
-      const k = Math.max(0, 1 - 5 * dt);
-      vel.x *= k; vel.z *= k;
-      f.quat.slerp(f.restQ, Math.min(1, 10 * dt));
-    } else {
-      _dq.setFromAxisAngle(_axis.copy(f.spin), f.spinRate * dt);
-      f.quat.premultiply(_dq);
-    }
-    this.items.setMatrix(f.item, pos, f.quat);
-    return f.grounded > 0.35 && vel.x * vel.x + vel.z * vel.z < 0.01;
   }
 
   update(dt) {
     if (!this.active) return;
     this.t += dt;
-    const { lights } = this.store;
+    const { lights, heap } = this.store;
+    const p = _p, q = _fq;
 
-    const front = this.zFront + (this.t / SWEEP) * this.zSpan;
-    while (this.qi < this.queue.length && this.queue[this.qi].z < front) {
-      this.launch(this.queue[this.qi++].item);
+    for (const f of this.flights) {
+      if (f.done || this.t < f.release) continue;
+      if (!f.launched) { f.launched = true; this.items.setFlying(f.item); }
+      const tau = this.t - f.release;
+      if (tau >= f.T) {
+        f.done = true;
+        this.landed++;
+        this.items.freezeAt(f.item, f.to, f.toQ);
+        continue;
+      }
+      const k = tau / f.T;
+      p.set(
+        f.from.x + (f.to.x - f.from.x) * k,
+        f.from.y + f.vy * tau - 0.5 * GRAV * tau * tau,
+        f.from.z + (f.to.z - f.from.z) * k,
+      );
+      // tornado swirl around the funnel, zero at both ends of the flight
+      const a = SWIRL * Math.sin(Math.PI * k);
+      const dx = p.x - heap.cx, dz = p.z - heap.cz;
+      p.x = heap.cx + dx * Math.cos(a) - dz * Math.sin(a);
+      p.z = heap.cz + dx * Math.sin(a) + dz * Math.cos(a);
+      q.copy(f.fromQ).premultiply(_s.setFromAxisAngle(f.spin, f.spinRate * tau));
+      if (k > 0.7) q.slerp(f.toQ, (k - 0.7) / 0.3);
+      this.items.setMatrix(f.item, p, q);
     }
-    this.flying = this.flying.filter((f) => {
-      if (!this.fly(f, dt)) return true;
-      this.items.freezeAt(f.item, f.pos, f.restQ);
-      return false;
-    });
+
+    // funnel: spins, fades in and out
+    const fade = Math.min(1, this.t / 0.8, Math.max(0, (this.end - this.t) / 1.2));
+    this.funnelOuter.rotation.y += dt * 4;
+    this.funnelInner.rotation.y -= dt * 6;
+    this.funnelOuter.material.opacity = 0.55 * fade;
+    this.funnelInner.material.opacity = 0.45 * fade;
+    this.funnelOuter.material.map.offset.y += dt * 0.6;
+    this.funnel.scale.setScalar(0.6 + 0.4 * fade);
 
     // flicker + lightning
     const flicker = Math.random() < 0.12 ? 0.25 : 1;
     lights.fixtureMat.emissiveIntensity = 1.2 * flicker;
     lights.hemi.intensity = 0.55 + 0.6 * flicker;
-    if (this.t > this.nextBolt && this.t < DURATION - 1) {
+    if (this.t > this.nextBolt && this.t < this.end - 1) {
       this.nextBolt = this.t + 0.9 + Math.random() * 1.6;
       this.bolt = 0.18;
       sfx.thunder();
@@ -167,19 +200,16 @@ export class Storm {
     lights.doorMat.emissive.copy(lights.windowMat.emissive);
     if (bolt) lights.hemi.intensity = 2.4;
 
-    this.player.shake = this.t < SWEEP + 1 ? 1 : Math.max(0, 1 - (this.t - SWEEP - 1));
+    this.player.shake = Math.max(0, Math.min(1, (this.end - 1.5 - this.t)));
 
-    if (this.t >= DURATION && this.qi >= this.queue.length) this.finish();
+    if (this.t >= this.end) this.finish();
   }
 
   finish() {
-    // anything still in the air drops where it is
-    for (const f of this.flying) {
-      f.pos.y = f.restY;
-      this.items.freezeAt(f.item, f.pos, f.restQ);
-    }
-    this.flying = [];
+    for (const f of this.flights) if (!f.done) this.items.freezeAt(f.item, f.to, f.toQ);
+    this.flights = [];
     this.active = false;
+    this.funnel.visible = false;
     const { lights } = this.store;
     lights.fixtureMat.emissiveIntensity = 1.2;
     lights.hemi.intensity = 1.25;
@@ -193,8 +223,8 @@ export class Storm {
 
   cancel() {
     this.active = false;
-    this.queue = [];
-    this.flying = [];
+    this.flights = [];
+    this.funnel.visible = false;
     sfx.wind(false);
   }
 }

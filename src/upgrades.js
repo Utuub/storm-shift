@@ -10,7 +10,7 @@ export const UPGRADES = [
   { id: 'legs3', branch: 'Legs', name: 'Roller Skates', cost: 250, req: ['legs2'], desc: '+15% walk speed' },
   { id: 'legs4', branch: 'Legs', name: 'Marathon Lungs', cost: 300, req: ['legs3'], desc: 'Sprint never runs out' },
 
-  { id: 'cart', branch: 'Cart', name: 'Shopping Cart', cost: 150, req: ['hands2'], desc: 'A cart that holds 25. F to push it. Stocking near it pulls matching items from it' },
+  { id: 'cart', branch: 'Cart', name: 'Shopping Cart', cost: 150, req: ['hands2'], desc: 'A cart that holds 25. Push it with the cart key. Stocking near it pulls matching items from it' },
   { id: 'cart2', branch: 'Cart', name: 'Bigger Basket', cost: 300, req: ['cart'], desc: 'Cart holds 50' },
   { id: 'cart3', branch: 'Cart', name: 'Flatbed Cart', cost: 600, req: ['cart2'], desc: 'Cart holds 100' },
 
