@@ -2,6 +2,8 @@
 
 A first-person, single-player 3D web game built with **Three.js** and the **Rapier** physics engine for CSCI 310 (Project 2).
 
+**▶ Play it: https://utuub.github.io/storm-shift/** (runs in the browser, nothing to install)
+
 ## Story
 
 It's the closing shift at Corner Fresh Market when the tornado sirens go off. Dale, the general manager, locks the doors. Then the tornado touches down right in the middle of the store and sucks every one of the 1,500 items off the shelves into one giant pile in the main aisle. Dale's rule: nobody clocks out until the store is back in order.
