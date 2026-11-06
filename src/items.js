@@ -43,6 +43,10 @@ export class Items {
     this.byHandle = new Map();
     this.hovered = null;
     this.dirty = new Set();
+    // Online mode: called when an item this client is responsible for comes to
+    // rest (one it threw, knocked loose, or plowed with its cart), so the
+    // other players can snap theirs to the same spot.
+    this.onRest = null;
 
     const plain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 });
     for (const p of products) {
@@ -120,6 +124,7 @@ export class Items {
     item.rest = false;
     item.still = 0;
     item.pile = pile;
+    item.auth = false;
     this.byHandle.set(col.handle, item);
     this.setMatrix(item, pos, quat);
   }
@@ -135,7 +140,9 @@ export class Items {
   freeze(item) {
     const t = item.body.translation();
     const r = item.body.rotation();
+    const auth = item.auth;
     this.freezeAt(item, _p.set(t.x, t.y, t.z), _q.set(r.x, r.y, r.z, r.w));
+    if (auth) this.onRest?.(item);
   }
 
   freezeAt(item, pos, quat) {
@@ -151,12 +158,14 @@ export class Items {
     item.state = 'loose';
     item.flying = false;
     item.rest = true;
+    item.auth = false;
     this.byHandle.set(item.collider.handle, item);
     this.setMatrix(item, pos, quat);
   }
 
-  wake(item) {
+  wake(item, auth = true) {
     this.makeLoose(item, item.restPos.clone(), item.restQuat.clone(), null, null, true);
+    item.auth = auth;
   }
 
   removeBody(item) {
@@ -170,21 +179,24 @@ export class Items {
   }
 
   // Take an item off the floor (into a hand, cart, or the coworker's hands).
-  take(item, state) {
+  // auth = this client did it, so it reports where the knocked-loose items land.
+  // In online mode another player's item has state 'remote'.
+  take(item, state, auth = true) {
     if (this.hovered === item) this.setHover(null);
     const wasResting = item.state === 'loose' && item.rest;
     const from = item.restPos.clone();
     this.removeBody(item);
     item.state = state;
+    item.thrownAt = 0;
     this.hide(item);
-    if (wasResting) this.dropAbove(from);
+    if (wasResting) this.dropAbove(from, auth);
   }
 
   // Anything resting on top of a removed item falls down instead of floating.
-  dropAbove(p) {
+  dropAbove(p, auth = true) {
     for (const o of this.all) {
       if (o.state !== 'loose' || !o.rest || o.restPos.y <= p.y + 0.02) continue;
-      if ((o.restPos.x - p.x) ** 2 + (o.restPos.z - p.z) ** 2 < 0.35 * 0.35) this.wake(o);
+      if ((o.restPos.x - p.x) ** 2 + (o.restPos.z - p.z) ** 2 < 0.35 * 0.35) this.wake(o, auth);
     }
   }
 

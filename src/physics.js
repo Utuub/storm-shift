@@ -11,6 +11,7 @@ export const G = {
   PLAYER: 0x0008,
   SLOT: 0x0010,
   NPC: 0x0020,
+  PEER: 0x0040,   // other players in online mode
   QUERY: 0x8000,
 };
 

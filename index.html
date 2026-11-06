@@ -29,10 +29,11 @@
   <p class="tagline">The tornado wrecked the store. Nobody clocks out until it's fixed.</p>
   <div class="menu-stack">
     <button id="btn-continue" class="gbtn" hidden>Continue<small id="continue-info"></small></button>
-    <button id="btn-new" class="gbtn">New Shift</button>
+    <button id="btn-new" class="gbtn">New Shift<small>solo</small></button>
+    <button id="btn-online" class="gbtn crew">Crew Shift<small>online co-op, 2-6 players</small></button>
     <button id="btn-title-options" class="gbtn alt">Settings</button>
   </div>
-  <p class="hint">CSCI 310 · Project 2</p>
+  <p class="hint">CSCI 310 · Projects 2 &amp; 3</p>
 </div>
 
 <!-- story -->
@@ -44,6 +45,47 @@
   </div>
 </div>
 
+<!-- online lobby -->
+<div id="lobby" class="screen dim" hidden>
+  <div class="panel-card wide lobby">
+    <div class="eyebrow">ONLINE CO-OP</div>
+    <h2 class="panel-title">CREW SHIFT</h2>
+    <p class="tagline">Everyone works the same wrecked store. Shelve the most, hand stuff off, and maybe bean a coworker with a cantaloupe.</p>
+
+    <div id="lobby-join">
+      <label class="row field"><span>Name tag</span><input id="lb-name" maxlength="16" placeholder="Your name" autocomplete="off"></label>
+      <div class="row field"><span>Apron color</span><div id="lb-colors" class="swatches"></div></div>
+      <div class="row field"><span>Face photo<small>goes on your character's head</small></span>
+        <div class="face-pick">
+          <div id="lb-face-prev" class="face-prev empty"></div>
+          <label class="gbtn small alt upload">Upload<input type="file" id="lb-face" accept="image/*" hidden></label>
+          <button id="lb-face-clear" class="gbtn small danger" hidden>Remove</button>
+        </div>
+      </div>
+      <label class="row field"><span>Crew code<small>friends type the same code</small></span><input id="lb-room" maxlength="12" value="STORE" autocomplete="off"></label>
+      <div class="lobby-actions">
+        <button id="lb-back" class="gbtn small alt">Back</button>
+        <button id="lb-join" class="gbtn">Clock In</button>
+      </div>
+    </div>
+
+    <div id="lobby-room" hidden>
+      <div class="eyebrow">CREW CODE &middot; <span id="lb-code"></span></div>
+      <div id="lb-players" class="crew-list"></div>
+      <div id="lb-host">
+        <h4>Shift size</h4>
+        <div id="lb-sizes" class="sizes"></div>
+        <button id="lb-start" class="gbtn">Start Shift</button>
+      </div>
+      <p id="lb-wait" class="tagline">Waiting for the host to start the shift&hellip;</p>
+      <button id="lb-leave" class="gbtn small danger">Leave</button>
+    </div>
+
+    <p id="lb-status" class="status"></p>
+    <p class="hint">Other players open <b id="lb-url"></b> (or this computer's network address) and type the same crew code.</p>
+  </div>
+</div>
+
 <!-- pause -->
 <div id="pause" class="screen dim" hidden>
   <div class="panel-card">
@@ -52,10 +94,11 @@
       <button class="gbtn" data-act="resume">Resume</button>
       <button class="gbtn alt" data-act="settings">Settings</button>
       <button class="gbtn alt" data-act="controls">Controls</button>
-      <button class="gbtn alt" data-act="save">Save Game</button>
+      <button id="btn-save" class="gbtn alt" data-act="save">Save Game</button>
       <button id="btn-restart" class="gbtn danger" data-act="restart">Restart Shift</button>
-      <button class="gbtn danger" data-act="quit">Save &amp; Quit to Title</button>
+      <button id="btn-quit" class="gbtn danger" data-act="quit">Save &amp; Quit to Title</button>
     </div>
+    <p id="pause-note" class="hint" hidden>Online shift: the store keeps going while you're paused.</p>
     <p id="save-status" class="status"></p>
   </div>
 </div>
@@ -100,13 +143,17 @@
 
 <div id="win" class="screen dim" hidden>
   <div class="panel-card">
-    <div class="eyebrow">SHIFT COMPLETE</div>
-    <h2 class="panel-title">The store's back in order!</h2>
-    <p class="tagline">Dale unlocks the doors. You can clock out.</p>
+    <div id="win-eyebrow" class="eyebrow">SHIFT COMPLETE</div>
+    <h2 id="win-title" class="panel-title">The store's back in order!</h2>
+    <p id="win-tag" class="tagline">Dale unlocks the doors. You can clock out.</p>
     <div id="win-stats" class="stats"></div>
-    <div class="menu-stack">
+    <div id="win-solo" class="menu-stack">
       <button id="btn-again" class="gbtn">Work Another Shift</button>
       <button id="btn-win-title" class="gbtn alt">Title Screen</button>
+    </div>
+    <div id="win-online" class="menu-stack" hidden>
+      <button id="btn-lobby" class="gbtn">Back to Lobby</button>
+      <button id="btn-leave-win" class="gbtn alt">Leave the Crew</button>
     </div>
   </div>
 </div>
@@ -138,7 +185,7 @@
   <div id="popups"></div>
 
   <div class="hud-panel top-left">
-    <div class="stat-line"><span class="big" id="hud-shelved">0</span><span class="of">/ 1500 shelved</span></div>
+    <div class="stat-line"><span class="big" id="hud-shelved">0</span><span class="of" id="hud-of">/ 1,500 shelved</span></div>
     <div class="bar"><div id="hud-bar"></div></div>
     <div class="chips">
       <span class="chip gold">$ <b id="hud-credits">0</b></span>
@@ -148,6 +195,8 @@
     <div id="hud-combo"></div>
   </div>
 
+  <div id="board" class="hud-panel" hidden></div>
+  <div id="feed"></div>
   <div id="notices"></div>
   <div id="hotbar">
     <div id="hand"></div>

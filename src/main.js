@@ -16,6 +16,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { loadSettings, saveSettings, DEFAULTS, ACTIONS, keyLabel } from './settings.js';
 import { readSave, writeSave, applySave, clearSave } from './save.js';
 import { Coworker } from './coworker.js';
+import { Online, mulberry32 } from './online.js';
 
 const $ = (id) => document.getElementById(id);
 const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -54,8 +55,9 @@ const hud = new HUD();
 const storm = new Storm(items, store, player, scene);
 
 const game = {
-  state: 'title', // title | story | storm | play | paused | menu | win
+  state: 'title', // title | story | storm | play | paused | menu | win | lobby
   credits: 0, score: 0, shelved: 0, wrong: 0, combo: 0, time: 0,
+  online: false, total: TOTAL_ITEMS, mine: 0, // online: total = items in this shift, mine = items I shelved
   owned: new Set(), lastProduct: null, eff: null,
   comboMult() { return Math.min(3, 1 + Math.floor(this.combo / 15)); },
 };
@@ -68,6 +70,10 @@ const carry = new Carry({
 const menu = new UpgradeMenu($('menu'), game, buy, closeShop);
 const coworker = new Coworker(scene, { items, store, carry });
 const saveCtx = { game, items, carry, cart, player, products, store };
+const online = new Online({
+  game, items, carry, cart, player, hud, store, storm, products, scene,
+  show, lock, goFullscreen, startShift: startOnlineShift, onWin: onlineWin, toTitle: leaveOnline,
+});
 
 // Title screen shows the store fully stocked.
 storm.restock();
@@ -77,7 +83,7 @@ carry.refreshHeld();
 applySettings();
 
 // ---------- screens ----------
-const SCREENS = ['title', 'story', 'pause', 'options', 'resume-click', 'win', 'menu'];
+const SCREENS = ['title', 'story', 'pause', 'options', 'resume-click', 'win', 'menu', 'lobby'];
 function show(id) {
   SCREENS.forEach((s) => ($(s).hidden = s !== id));
 }
@@ -137,6 +143,11 @@ function pause() {
   $('save-status').textContent = '';
   restartArmed = false;
   $('btn-restart').textContent = 'Restart Shift';
+  // online: the shift keeps running while you're in this menu
+  $('btn-restart').hidden = game.online;
+  $('btn-save').hidden = game.online;
+  $('btn-quit').textContent = game.online ? 'Leave the Crew' : 'Save & Quit to Title';
+  $('pause-note').hidden = !game.online;
   show('pause');
 }
 
@@ -160,7 +171,10 @@ $('pause').addEventListener('click', (e) => {
   else if (act === 'save') {
     const ok = writeSave(saveCtx);
     $('save-status').textContent = ok ? `Saved at ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Could not save (storage blocked)';
-  } else if (act === 'quit') quitToTitle();
+  } else if (act === 'quit') {
+    if (game.online) online.leave();
+    else quitToTitle();
+  }
 });
 
 // ---------- title / story ----------
@@ -211,6 +225,13 @@ $('btn-continue').addEventListener('click', () => {
   }
 });
 $('btn-title-options').addEventListener('click', () => { initAudio(); sfx.click(); openOptions('settings', 'title'); });
+$('btn-online').addEventListener('click', () => { initAudio(); sfx.click(); online.open(); });
+$('btn-lobby').addEventListener('click', () => {
+  sfx.click();
+  if (online.isHost) online.socket?.emit('to-lobby');
+  online.open();
+});
+$('btn-leave-win').addEventListener('click', () => { sfx.click(); online.leave(); });
 $('btn-again').addEventListener('click', () => { sfx.click(); goFullscreen(); lock(); newGame(); });
 $('btn-win-title').addEventListener('click', () => { sfx.click(); toTitle(); });
 
@@ -222,7 +243,7 @@ function resetWorld() {
   cart.remove();
   coworker.remove();
   player.ignoreHandle = -1;
-  Object.assign(game, { credits: 0, score: 0, shelved: 0, wrong: 0, combo: 0, time: 0, lastProduct: null });
+  Object.assign(game, { credits: 0, score: 0, shelved: 0, wrong: 0, combo: 0, time: 0, lastProduct: null, mine: 0 });
   game.owned.clear();
   game.eff = effects(game.owned);
   menu.close();
@@ -233,6 +254,8 @@ function resetWorld() {
 
 function newGame() {
   resetWorld();
+  game.online = false;
+  game.total = TOTAL_ITEMS;
   carry.refreshHeld();
   game.state = 'storm';
   show(null);
@@ -246,7 +269,114 @@ function newGame() {
 function onStormDone() {
   $('storm-caption').hidden = true;
   startPlay();
-  hud.say("Doors stay locked till this place is fixed. Every item goes back in its own spot. Come find me at the office desk when you've earned some credits.");
+  if (game.online) {
+    hud.say(`Whole crew's here, good. ${game.total} items on the floor. Nobody clocks out till they're all back. And quit throwing groceries at each other.`);
+  } else {
+    hud.say("Doors stay locked till this place is fixed. Every item goes back in its own spot. Come find me at the office desk when you've earned some credits.");
+  }
+}
+
+// ---------- online Crew Shift (see online.js) ----------
+const SPAWN_X = [0, 1.2, -1.2, 2.4, -2.4, 3.6];
+
+// opts: { seed, ids, slot, isHost, late, sync }
+function startOnlineShift(opts) {
+  resetWorld();
+  game.online = true;
+  const only = new Set(opts.ids);
+  game.total = only.size;
+  player.teleport(store.spawn.clone().setX(store.spawn.x + SPAWN_X[opts.slot % SPAWN_X.length]));
+  carry.refreshHeld();
+  // the tornado only takes the sections in this shift; the rest stay stocked
+  products.forEach((p) => { p.placed = p.items.filter((i) => !only.has(i.id)).length; });
+  storm.reportPile = opts.isHost;
+  const rand = mulberry32(opts.seed);
+  if (opts.late) {
+    lateJoin(opts.sync, only, rand);
+    game.time = opts.sync.elapsed || 0;
+    show(null);
+    startPlay();
+    hud.say(`About time you showed up. ${game.total - game.shelved} items still on the floor. Grab something.`, 5000);
+    return;
+  }
+  game.state = 'storm';
+  show(null);
+  hud.show(false);
+  sfx.hum(false);
+  $('storm-caption').hidden = false;
+  storm.start(onStormDone, { rand, only });
+  products.forEach((p) => { p.placed = p.items.filter((i) => !only.has(i.id)).length; drawSlotTag(p.slot.tag, p); });
+}
+
+// Rebuild a shift that's already running from the server's snapshot.
+function lateJoin(sync, only, rand) {
+  storm.restock();
+  const target = new Map(storm.plan(rand, only).map((f) => [f.item.id, f]));
+  const rests = new Map();
+  for (let i = 0; i < sync.rests.length; i += 8) rests.set(sync.rests[i], sync.rests.slice(i + 1, i + 8));
+  const v = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  let shelved = 0;
+  for (const id of only) {
+    const item = items.all[id];
+    const o = sync.owners[id];
+    if (o === 1) { items.shelve(item, item.p.placed++); shelved++; }
+    else if (o === 0) {
+      const r = rests.get(id);
+      if (r) items.freezeAt(item, v.set(r[0], r[1], r[2]), q.set(r[3], r[4], r[5], r[6]).normalize());
+      else items.freezeAt(item, target.get(id).to, target.get(id).toQ);
+    } else items.take(item, 'remote', false);
+  }
+  products.forEach((p) => drawSlotTag(p.slot.tag, p));
+  game.shelved = shelved;
+}
+
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+// The server says the whole crew finished.
+function onlineWin(d) {
+  game.state = 'win';
+  sfx.hum(false);
+  if (locked()) document.exitPointerLock();
+  sfx.win();
+  hud.show(false);
+  hud.hideDialog();
+  menu.close();
+  const ps = d.players;
+  const best = (key) => ps.reduce((a, b) => (b[key] > (a?.[key] ?? 0) ? b : a), null);
+  const awards = [
+    ['Employee of the Shift', ps[0], (p) => `${p.shelved} items shelved`],
+    ['Sharpshooter', best('tricks'), (p) => plural(p.tricks, 'trick shot')],
+    ['Team Player', best('gives'), (p) => plural(p.gives, 'hand-off')],
+    ['Workplace Hazard', best('bonks'), (p) => `${plural(p.bonks, 'coworker')} bonked`],
+  ].filter(([, p]) => p && (p.shelved || p.tricks || p.gives || p.bonks));
+  $('win-eyebrow').textContent = 'CREW SHIFT COMPLETE';
+  $('win-title').textContent = 'The crew put the store back together!';
+  $('win-tag').textContent = `${d.total} items in ${fmtTime(d.time)}. Dale unlocks the doors.`;
+  $('win-stats').innerHTML = `
+    <div class="awards">${awards.map(([title, p, f]) => `<div class="award" style="--c:${p.color}"><small>${title}</small><b>${esc(p.name)}</b><span>${f(p)}</span></div>`).join('')}</div>
+    <table class="results"><tr><th></th><th>Worker</th><th>Shelved</th><th>Score</th><th>Bonks</th></tr>
+    ${ps.map((p, i) => `<tr class="${p.id === online.id ? 'me' : ''}"><td>${i + 1}</td><td><i style="background:${p.color}"></i>${esc(p.name)}</td><td>${p.shelved}</td><td>${p.score}</td><td>${p.bonks}</td></tr>`).join('')}
+    </table>`;
+  $('win-solo').hidden = true;
+  $('win-online').hidden = false;
+  $('btn-lobby').textContent = online.isHost ? 'Back to Lobby (new shift)' : 'Back to Lobby';
+  show('win');
+}
+
+// Leaving the crew (or the lobby): back to a fully stocked title screen.
+function leaveOnline() {
+  if (game.online || online.socket) online.cleanup();
+  resetWorld();
+  game.online = false;
+  game.total = TOTAL_ITEMS;
+  storm.restock();
+  products.forEach((p) => { p.placed = p.count; drawSlotTag(p.slot.tag, p); });
+  $('storm-caption').hidden = true;
+  hud.show(false);
+  toTitle();
 }
 
 function loadGame(data) {
@@ -263,6 +393,7 @@ function loadGame(data) {
 
 function startPlay() {
   hud.show(true);
+  hud.setTotal(game.total);
   show(null);
   sfx.hum(true);
   game.state = 'play';
@@ -288,7 +419,13 @@ function toTitle() {
 }
 
 function win() {
+  if (game.online) return; // online: the server announces the win (onlineWin)
   game.state = 'win';
+  $('win-eyebrow').textContent = 'SHIFT COMPLETE';
+  $('win-title').textContent = "The store's back in order!";
+  $('win-tag').textContent = 'Dale unlocks the doors. You can clock out.';
+  $('win-solo').hidden = false;
+  $('win-online').hidden = true;
   clearSave();
   sfx.hum(false);
   document.exitPointerLock();
@@ -342,9 +479,11 @@ function syncCoworker() {
 }
 
 function rescue(item) {
+  const auth = item.auth;
   items.freezeAt(item,
     new THREE.Vector3(store.heap.cx + (Math.random() - 0.5) * 3, 0.15, store.heap.cz + (Math.random() - 0.5) * 3),
     new THREE.Quaternion());
+  if (auth) items.onRest?.(item);
 }
 
 // ---------- settings + controls screen ----------
@@ -499,7 +638,7 @@ addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
-addEventListener('beforeunload', () => { if (['play', 'paused', 'menu'].includes(game.state)) writeSave(saveCtx); });
+addEventListener('beforeunload', () => { if (!game.online && ['play', 'paused', 'menu'].includes(game.state)) writeSave(saveCtx); });
 
 // Dev only (?debug): shelve everything except 5 loose items to test the ending.
 function debugShelve() {
@@ -530,14 +669,15 @@ function frame(now) {
   if (fpsT >= 0.5) { if (settings.showFps) hud.fps(true, Math.round(fpsFrames / fpsT)); fpsFrames = 0; fpsT = 0; }
   const st = game.state;
 
-  if (st === 'play' || st === 'storm' || st === 'menu' || st === 'win') {
+  // online, the world keeps running while you're in the pause menu
+  if (st === 'play' || st === 'storm' || st === 'menu' || st === 'win' || (game.online && st === 'paused')) {
     acc += dt;
     let steps = 0;
     while (acc >= STEP && steps < MAX_STEPS) {
       player.step(STEP, {
         speedMult: game.eff.speedMult * (cart.pushing ? 0.9 : 1),
         unlimitedSprint: game.eff.unlimitedSprint,
-        frozen: st !== 'play',
+        frozen: st !== 'play' || online.frozen,
       });
       cart.step(player, store.bounds);
       world.step();
@@ -553,6 +693,7 @@ function frame(now) {
   }
 
   if (st === 'storm') storm.update(dt);
+  if (game.online) online.update(dt, t);
   items.sync(store.bounds, rescue);
   cart.syncMesh(acc / STEP);
   if (st === 'title') {
@@ -590,10 +731,10 @@ function frame(now) {
       } else hud.radar(null);
     } else if (!game.eff.radar) hud.radar(null);
     if (frameN % 20 === 0) hud.renderChecklist();
-    if (game.time >= autosaveAt) { autosaveAt = game.time + 60; writeSave(saveCtx); }
+    if (!game.online && game.time >= autosaveAt) { autosaveAt = game.time + 60; writeSave(saveCtx); }
   }
-  if (st === 'play' || st === 'menu') {
-    gm.update(t, game.credits >= cheapestAvailable(game.owned), player.pos);
+  if (st === 'play' || st === 'menu' || (game.online && st === 'paused')) {
+    gm.update(t, game.credits >= cheapestAvailable(game.owned, game.online), player.pos);
     hud.update(game, player, game.eff);
   }
   renderer.render(scene, camera);
@@ -604,4 +745,4 @@ refreshTitle();
 show('title');
 requestAnimationFrame(frame);
 
-if (DEBUG) window.__game = { game, items, carry, cart, player, store, products, renderer, scene, camera, storm, hud, coworker };
+if (DEBUG) window.__game = { game, items, carry, cart, player, store, products, renderer, scene, camera, storm, hud, coworker, online };

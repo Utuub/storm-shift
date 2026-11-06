@@ -117,6 +117,7 @@ export class Storm {
     this.player = player;
     this.active = false;
     this.flights = [];
+    this.reportPile = false; // online host: report where the pile settles
 
     const tex = funnelTexture();
     const mk = (rt, rb, h, op) => new THREE.Mesh(
@@ -137,25 +138,20 @@ export class Storm {
     for (const p of this.items.products) p.items.forEach((item, k) => this.items.shelve(item, k));
   }
 
-  start(onDone) {
-    this.restock();
-    this.onDone = onDone;
-    this.t = 0;
-    this.active = true;
-    this.nextBolt = 0.3;
-    this.funnel.visible = true;
-    const rand = Math.random;
+  // Where every item flies and lands. Online, every player passes the same
+  // seeded rand and item list, so everyone's tornado builds the same pile.
+  plan(rand = Math.random, only = null) {
     const { heap } = this.store;
-
+    const pool = only ? this.items.all.filter((i) => only.has(i.id)) : this.items.all;
     // items closer to the funnel get pulled first, and land first (underneath)
-    const list = this.items.all.map((item) => {
+    const list = pool.map((item) => {
       const c = item.p.slot.center;
       const d = Math.hypot(c.x - heap.cx, c.z - heap.cz);
       return { item, release: 0.4 + (d / 30) * RELEASE * 0.75 + rand() * RELEASE * 0.25 };
     }).sort((a, b) => a.release - b.release);
     const pile = buildPile(list.map((l) => l.item), heap, rand);
 
-    this.flights = list.map(({ item, release }, i) => {
+    return list.map(({ item, release }, i) => {
       const { to, toQ } = pile[i];
       const from = new THREE.Vector3();
       const fromQ = new THREE.Quaternion();
@@ -169,6 +165,18 @@ export class Storm {
         spinRate: 5 + rand() * 9, launched: false, done: false,
       };
     });
+  }
+
+  // opts.rand: seeded random for online play. opts.only: a Set of item ids the
+  // tornado takes (shorter online shifts); everything else stays on the shelf.
+  start(onDone, opts = {}) {
+    this.restock();
+    this.onDone = onDone;
+    this.t = 0;
+    this.active = true;
+    this.nextBolt = 0.3;
+    this.funnel.visible = true;
+    this.flights = this.plan(opts.rand || Math.random, opts.only || null);
     this.landed = 0;
     this.end = Math.max(MIN_LEN, ...this.flights.map((f) => f.release + f.T)) + 0.3;
     sfx.wind(true);
@@ -183,7 +191,13 @@ export class Storm {
 
     for (const f of this.flights) {
       if (f.done || this.t < f.release) continue;
-      if (!f.launched) { f.launched = true; this.items.setFlying(f.item); }
+      // online: another player already grabbed it, or the host's pile report placed it
+      if (f.launched && (f.item.state !== 'loose' || !f.item.flying)) { f.done = true; this.landed++; continue; }
+      if (!f.launched) {
+        if (f.item.state !== 'shelved') { f.done = true; this.landed++; continue; }
+        f.launched = true;
+        this.items.setFlying(f.item);
+      }
       const tau = this.t - f.release;
       if (tau >= f.T) {
         f.done = true;
@@ -191,6 +205,7 @@ export class Storm {
         // hand it to real physics so it settles into the pile; it freezes
         // into a resting collider once it stops moving (Items.manage)
         this.items.makeLoose(f.item, f.to, f.toQ, LAND_V, null, true);
+        f.item.auth = this.reportPile;
         continue;
       }
       const k = tau / f.T;
@@ -240,7 +255,12 @@ export class Storm {
   }
 
   finish() {
-    for (const f of this.flights) if (!f.done) this.items.makeLoose(f.item, f.to, f.toQ, LAND_V, null, true);
+    for (const f of this.flights) {
+      if (f.done) continue;
+      if (f.launched ? (f.item.state !== 'loose' || !f.item.flying) : f.item.state !== 'shelved') continue;
+      this.items.makeLoose(f.item, f.to, f.toQ, LAND_V, null, true);
+      f.item.auth = this.reportPile;
+    }
     this.flights = [];
     this.active = false;
     this.funnel.visible = false;

@@ -3,6 +3,9 @@ import { sfx } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 
+const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ESC[c]);
+
 export const fmtTime = (s) => {
   const m = Math.floor(s / 60);
   return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -22,7 +25,9 @@ export class HUD {
       radar: $('radar'), radarArrow: $('radar-arrow'), radarDist: $('radar-dist'),
       checklist: $('checklist'), popups: $('popups'),
       banner: $('banner'), dialog: $('dialog'), dialogText: $('dialog-text'), fps: $('fps'),
+      of: $('hud-of'), board: $('board'), feed: $('feed'),
     };
+    this.total = TOTAL_ITEMS;
     this.typing = null;
   }
 
@@ -31,7 +36,7 @@ export class HUD {
   update(game, player, eff) {
     const e = this.el;
     setText(e.shelved, `${game.shelved}`);
-    const w = `${(game.shelved / TOTAL_ITEMS) * 100}%`;
+    const w = `${(game.shelved / this.total) * 100}%`;
     if (e.bar._w !== w) { e.bar._w = w; e.bar.style.width = w; }
     setText(e.credits, String(game.credits));
     setText(e.score, String(game.score));
@@ -147,6 +152,32 @@ export class HUD {
     }).join(''));
   }
 
+
+  setTotal(n) {
+    this.total = n;
+    setText(this.el.of, `/ ${n.toLocaleString()} shelved`);
+  }
+
+  // Online leaderboard (top right). b = { done, total, players: [...] } or null to hide.
+  board(b, me) {
+    const el = this.el.board;
+    el.hidden = !b;
+    if (!b) { this.el.feed.innerHTML = ''; return; }
+    setHTML(el, `<h3>Crew <span>${b.done}/${b.total}</span></h3>` + b.players.map((p, i) => `
+      <div class="board-row${p.id === me ? ' me' : ''}"><span class="rank">${i + 1}</span><i style="background:${p.color}"></i>
+      <span class="bname">${esc(p.name)}</span><b>${p.shelved}</b>${p.bonks ? `<small title="coworkers bonked">\u{1F4A5}${p.bonks}</small>` : ''}</div>`).join(''));
+  }
+
+  // kill-feed style line under the leaderboard
+  feed(html) {
+    const n = document.createElement('div');
+    n.className = 'feed-line';
+    n.innerHTML = html;
+    this.el.feed.prepend(n);
+    while (this.el.feed.children.length > 4) this.el.feed.lastChild.remove();
+    setTimeout(() => n.classList.add('out'), 4500);
+    setTimeout(() => n.remove(), 5000);
+  }
 
   fps(on, v) {
     this.el.fps.hidden = !on;

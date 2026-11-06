@@ -1,0 +1,7 @@
+services:
+  storm-shift:
+    build: .
+    image: storm-shift
+    ports:
+      - "3000:3000"
+    restart: unless-stopped

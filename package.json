@@ -1,0 +1,18 @@
+{
+  "name": "storm-shift",
+  "version": "3.0.0",
+  "description": "Storm Shift: a first-person Three.js grocery restock game with an online co-op mode (Socket.IO).",
+  "type": "module",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  },
+  "license": "MIT"
+}

@@ -52,8 +52,9 @@ export function effects(owned) {
 export const canBuy = (u, owned, credits) =>
   !owned.has(u.id) && u.req.every((r) => owned.has(r)) && credits >= u.cost;
 
-export const cheapestAvailable = (owned) => {
-  const open = UPGRADES.filter((u) => !owned.has(u.id) && u.req.every((r) => owned.has(r)));
+// online = true skips the Crew branch (in Crew Shift your coworkers are real people)
+export const cheapestAvailable = (owned, online = false) => {
+  const open = UPGRADES.filter((u) => !owned.has(u.id) && u.req.every((r) => owned.has(r)) && !(online && u.branch === 'Crew'));
   return open.length ? Math.min(...open.map((u) => u.cost)) : Infinity;
 };
 
@@ -95,7 +96,7 @@ export class UpgradeMenu {
   render() {
     const { owned, credits } = this.game;
     this.root.querySelector('#menu-credits').textContent = credits;
-    this.tree.innerHTML = BRANCHES.map((b) => `
+    this.tree.innerHTML = BRANCHES.filter((b) => !(this.game.online && b === 'Crew')).map((b) => `
       <div class="branch">
         <h3>${b}</h3>
         ${UPGRADES.filter((u) => u.branch === b).map((u) => {

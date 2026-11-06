@@ -17,6 +17,8 @@ export class Carry {
     Object.assign(this, { game, items, player, cart, gm, hud, camera, store, settings, onWin, onMenu });
     this.hand = [];
     this.target = null;
+    this.net = null;            // online mode (online.js) when playing Crew Shift
+    this.peerByHandle = new Map(); // collider handle -> other player's avatar
     this.slotByHandle = new Map(store.slots.map((s) => [s.collider.handle, s]));
 
     // held items render in the lower right of the view
@@ -58,7 +60,7 @@ export class Carry {
     this.camera.getWorldPosition(_o);
     this.camera.getWorldDirection(_d);
     const reach = eff.reach;
-    const h1 = castRay(_o, _d, reach + 1, G.STATIC | G.ITEM | G.CART | G.NPC);
+    const h1 = castRay(_o, _d, reach + 1, G.STATIC | G.ITEM | G.CART | G.NPC | G.PEER);
     const h2 = castRay(_o, _d, reach + 0.5, G.SLOT | G.STATIC, true);
 
     let t = null;
@@ -68,6 +70,7 @@ export class Carry {
       if (item && h1.dist <= reach) t = { type: 'item', item };
       else if (hd === this.cart.handle && h1.dist <= reach) t = { type: 'cart' };
       else if (hd === this.gm.collider.handle && h1.dist <= reach + 1) t = { type: 'gm' };
+      else if (this.peerByHandle.has(hd) && h1.dist <= reach) t = { type: 'peer', peer: this.peerByHandle.get(hd) };
     }
     if (!t && h2) {
       const slot = this.slotByHandle.get(h2.collider.handle);
@@ -97,6 +100,9 @@ export class Carry {
         n ? `${lmb} Stock ${n}` : done ? '<span class="ok">Full</span>' : '');
     } else if (t.type === 'gm') {
       this.hud.setAim('Dale', `${k('interact')} Upgrades`);
+    } else if (t.type === 'peer') {
+      const sel = this.selected;
+      this.hud.setAim(t.peer.nameHTML, sel ? `${k('interact')} Hand over ${sel.p.name}` : 'Coworker');
     } else {
       this.hud.setAim(`Cart ${this.cart.items.length}/${this.cart.cap}`, `${k('interact')} Unload hands &nbsp; ${k('cart')} Push`);
     }
@@ -131,6 +137,7 @@ export class Carry {
         && this.items.position(i, _a).distanceTo(fp) < 2));
     }
     let took = 0;
+    const grabbed = [];
     for (const item of list) {
       if (this.hand.length < eff.carry) {
         this.items.take(item, 'held');
@@ -141,7 +148,9 @@ export class Carry {
         this.cart.items.push(item);
       } else break;
       took++;
+      grabbed.push(item.id);
     }
+    if (grabbed.length) this.net?.grab(grabbed);
     if (!took) {
       sfx.buzz();
       this.hud.notice(this.cart.active ? 'Hands full! Bring your cart closer.' : 'Hands full! Go stock what you have.', 'bad');
@@ -158,6 +167,32 @@ export class Carry {
     if (!t) return;
     if (t.type === 'gm') this.onMenu();
     else if (t.type === 'cart') this.unloadToCart();
+    else if (t.type === 'peer') this.give(t.peer);
+  }
+
+  // Online: hand your selected item to the coworker you're looking at.
+  give(peer) {
+    const item = this.selected;
+    if (!item) return this.hud.notice('Nothing in your hands to hand over.');
+    if (peer.stunned) return this.hud.notice(`${peer.nameHTML} is seeing stars. Try again in a sec.`);
+    this.hand.splice(this.sel, 1);
+    item.state = 'remote';
+    this.net?.give(peer.id, item);
+    sfx.pickup();
+    this.hud.notice(`Handed <b>${item.p.name}</b> to ${peer.nameHTML}`, 'good');
+    this.refreshHeld();
+  }
+
+  // Online: the server says someone else has this item. Take it out of our hands/cart.
+  lose(item) {
+    const inHand = this.hand.includes(item);
+    const inCart = this.cart.items.includes(item);
+    if (!inHand && !inCart) return false;
+    this.hand = this.hand.filter((i) => i !== item);
+    this.cart.items = this.cart.items.filter((i) => i !== item);
+    this.cart.updateFill();
+    this.refreshHeld();
+    return true;
   }
 
   unloadToCart() {
@@ -203,9 +238,10 @@ export class Carry {
 
   // Put one item in its slot and pay out credits. The coworker's items
   // (byHelper) pay a flat 1 credit and don't touch your combo.
-  place(item, byHelper = false) {
+  place(item, byHelper = false, trick = false) {
     const g = this.game;
     const p = item.p;
+    g.mine = (g.mine || 0) + 1;
     this.items.shelve(item, p.placed);
     p.placed++;
     g.shelved++;
@@ -228,7 +264,24 @@ export class Carry {
         this.hud.banner(`${sec.name} restocked!`, '+40 bonus credits');
       }
     }
-    if (g.shelved === TOTAL_ITEMS) this.onWin();
+    this.net?.stocked(item, trick);
+    if (g.shelved >= (g.total || TOTAL_ITEMS)) this.onWin();
+  }
+
+  // Online: another player stocked this item. Same shelf update, no credits for us.
+  placeRemote(item, who) {
+    const g = this.game;
+    const p = item.p;
+    if (item.state === 'shelved') return;
+    this.lose(item);
+    this.items.shelve(item, p.placed);
+    p.placed++;
+    g.shelved++;
+    drawSlotTag(p.slot.tag, p);
+    if (p.placed === p.count && p.section.list.every((x) => x.placed === x.count)) {
+      sfx.complete();
+      this.hud.banner(`${p.section.name} restocked!`, `by ${who}`);
+    }
   }
 
   // The item you have selected (scroll wheel / number keys cycle it).
@@ -256,8 +309,12 @@ export class Carry {
     _q.setFromEuler(_e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3));
     const speed = eff?.throwSpeed ?? 3.5;
     // a gentle lob for a plain toss; upgraded throws fly where you aim
-    this.items.makeLoose(item, _o, _q, _d.clone().multiplyScalar(speed).add(new THREE.Vector3(0, speed > 4 ? 0.3 : 1, 0)), null);
+    const vel = _d.clone().multiplyScalar(speed).add(new THREE.Vector3(0, speed > 4 ? 0.3 : 1, 0));
+    this.items.makeLoose(item, _o, _q, vel, null);
     item.thrownAt = performance.now();
+    item.auth = true; // we report where it lands
+    item.bonked = false;
+    this.net?.release(item, _o, _q, vel);
     sfx.drop();
     this.refreshHeld();
   }
@@ -278,7 +335,7 @@ export class Carry {
         && Math.abs(t.x - s.center.x) < s.boxSize.x / 2 + r && Math.abs(t.y - s.center.y) < s.boxSize.y / 2 + r
         && Math.abs(t.z - s.center.z) < s.boxSize.z / 2 + r && item.p.placed < item.p.count) {
         item.thrownAt = 0;
-        this.place(item);
+        this.place(item, false, true);
         this.game.credits += 3; this.game.score += 3;
         sfx.ding(8);
         this.hud.popup('TRICK SHOT! +3', 'good');
