@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ART, DRAWN } from './labels.js';
+import { drawArt } from './art.js';
 
 function canvas(w, h) {
   const c = document.createElement('canvas');
@@ -32,51 +32,6 @@ function wrapLines(ctx, text, maxW) {
   }
   if (line) lines.push(line);
   return lines;
-}
-
-const EMOJI_FONT = '"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
-
-function drawPicture(ctx, p, cx, cy, size) {
-  const d = DRAWN[p.name];
-  if (d?.kind === 'cubes') {
-    // a little stack of sugar cubes
-    const s = size * 0.3;
-    const cubes = [[-1, 0], [0, 0], [1, 0], [-0.5, -1], [0.5, -1], [0, -2]];
-    for (const [i, j] of cubes) {
-      const x = cx + i * s * 1.05 - s / 2, y = cy + size * 0.25 + j * s * 0.95 - s;
-      ctx.fillStyle = d.color;
-      ctx.fillRect(x, y, s, s);
-      ctx.fillStyle = 'rgba(0,0,0,0.12)';
-      ctx.fillRect(x + s * 0.7, y, s * 0.3, s);
-      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, s, s);
-      ctx.fillStyle = 'rgba(0,0,0,0.12)';
-      for (let k = 0; k < 6; k++) ctx.fillRect(x + ((k * 37) % 10) / 10 * s, y + ((k * 53) % 10) / 10 * s, 2, 2);
-    }
-    return;
-  }
-  if (d?.kind === 'mound') {
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + size * 0.3, size * 0.48, size * 0.42, 0, Math.PI, 0);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(0,0,0,0.1)';
-    ctx.beginPath();
-    ctx.ellipse(cx + size * 0.15, cy + size * 0.1, size * 0.12, size * 0.06, 0.4, 0, Math.PI * 2);
-    ctx.fill();
-    return;
-  }
-  const art = ART[p.name];
-  if (!art) return;
-  ctx.font = `${size}px ${EMOJI_FONT}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#000';
-  ctx.fillText(art, cx, cy);
 }
 
 // Package art in x 0..224 (brand color, store brand, picture, name). x 224..256
@@ -115,7 +70,7 @@ export function productTexture(p) {
   ctx.strokeStyle = shade(p.color, -0.25);
   ctx.lineWidth = 4;
   ctx.stroke();
-  drawPicture(ctx, p, W / 2, 108, 78);
+  drawArt(ctx, p.name, W / 2, 104, 104);
   // name plate
   ctx.fillStyle = 'rgba(255,255,255,0.95)';
   ctx.fillRect(10, 172, W - 20, 64);

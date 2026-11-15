@@ -107,7 +107,7 @@ Then open http://localhost:8310. Add `?debug` for test keys: F9 shelves everythi
 - `src/cart.js` is the shopping cart
 - `src/gm.js` + `src/upgrades.js` are Dale and his upgrade shop
 - `src/coworker.js` is Jess, the hired coworker
-- `src/labels.js` holds the picture on each product's label
+- `src/art.js` draws the picture for every product (package labels and HUD icons)
 - `src/settings.js` + `src/save.js` handle settings and key binds, and save games (localStorage)
 - `src/physics.js` handles the Rapier setup, collision groups, and raycasts
 - `src/hud.js`, `src/audio.js`, and `src/textures.js` handle the HUD, synthesized sounds, and canvas textures

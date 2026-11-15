@@ -1,10 +1,14 @@
 import { SECTIONS, TOTAL_ITEMS } from './catalog.js';
 import { sfx } from './audio.js';
+import { iconURL } from './art.js';
 
 const $ = (id) => document.getElementById(id);
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ESC[c]);
+
+// <img> of a product's picture, for HUD text
+export const icon = (p, cls = 'pic') => `<img class="${cls}" src="${iconURL(p.name)}" alt="">`;
 
 export const fmtTime = (s) => {
   const m = Math.floor(s / 60);
@@ -59,12 +63,12 @@ export class HUD {
     for (let i = 0; i < cap; i++) {
       const item = hand[i];
       slots.push(item
-        ? `<div class="hslot full${i === sel ? ' sel' : ''}" title="${item.p.name}"><span style="background:${item.p.color}"></span><em>${i + 1}</em></div>`
+        ? `<div class="hslot full${i === sel ? ' sel' : ''}" title="${item.p.name}">${icon(item.p)}<em>${i + 1}</em></div>`
         : '<div class="hslot"></div>');
     }
     const cur = hand[sel];
     const hint = hand.length > 1 ? ' <small>scroll to switch</small>' : '';
-    this.el.hand.innerHTML = `<div class="hand-label">${cur ? cur.p.name + hint : 'Empty hands'}</div><div class="hslots">${slots.join('')}</div>`;
+    this.el.hand.innerHTML = `<div class="hand-label">${cur ? icon(cur.p) + cur.p.name + hint : 'Empty hands'}</div><div class="hslots">${slots.join('')}</div>`;
     this.el.cart.hidden = !cart.active;
     if (cart.active) this.el.cart.innerHTML = `<b>CART</b> ${cart.items.length}/${cart.cap}${cart.pushing ? ' <i>pushing</i>' : ''}`;
   }
@@ -148,7 +152,8 @@ export class HUD {
       const total = s.list.reduce((a, p) => a + p.count, 0);
       return `<div class="check-row ${done === total ? 'done' : ''}">
         <span class="swatch" style="background:${s.color}"></span>
-        <span class="check-name">${s.name}</span><span class="check-bar"><i style="width:${(done / total) * 100}%"></i></span><span>${done}/${total}</span></div>`;
+        <span class="check-name">${s.name}</span><span class="check-bar"><i style="width:${(done / total) * 100}%"></i></span><span>${done}/${total}</span></div>
+        <div class="check-items">${s.list.map((p) => `<span class="${p.placed >= p.count ? 'ok' : ''}" title="${p.name} ${p.placed}/${p.count}">${icon(p)}</span>`).join('')}</div>`;
     }).join(''));
   }
 

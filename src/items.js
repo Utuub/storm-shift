@@ -13,8 +13,8 @@ function colliderDesc(shape) {
 // Surface finish by package type: cans are metal, bottles are glossy, boxes are matte.
 function finish(p) {
   const k = modelKey(p).split(':')[0];
-  if (['can', 'canLid'].includes(k)) return { roughness: 0.3, metalness: 0.45 };
-  if (['bottle', 'soda', 'flatBottle', 'jug', 'jar', 'spice'].includes(k)) return { roughness: 0.22, metalness: 0.05 };
+  if (['can', 'canLid', 'sodaCan'].includes(k)) return { roughness: 0.3, metalness: 0.45 };
+  if (['bottle', 'soda', 'flatBottle', 'jug', 'jar', 'spice', 'spray', 'squeeze', 'pump', 'syrup', 'pillBottle', 'deodorant'].includes(k)) return { roughness: 0.22, metalness: 0.05 };
   if (['pillow'].includes(k)) return { roughness: 0.35, metalness: 0.1 };
   return { roughness: 0.6, metalness: 0 };
 }

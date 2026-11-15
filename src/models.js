@@ -21,8 +21,14 @@ const BY_NAME = {
   'Salmon Fillet': 'meat:fillet',
   'Sliced Turkey': 'deli', 'Honey Ham': 'deli', 'Genoa Salami': 'deli', 'Roast Beef': 'deli',
   'Provolone': 'deli', 'Pepper Jack': 'cheese', 'Sliced Swiss': 'cheese', 'Flour Tortillas': 'tortilla',
-  'Thick Cut Bacon': 'box', 'Puppy Pads': 'box', 'Large Eggs': 'box',
+  'Thick Cut Bacon': 'meat:bacon', 'Puppy Pads': 'box', 'Large Eggs': 'box',
   'Rice Cakes': 'roll', 'Paper Cups': 'cups',
+  'Bratwurst': 'meat:links', 'Breakfast Sausage': 'meat:links',
+  'Glass Cleaner': 'spray', 'All-Purpose Spray': 'spray',
+  'Ketchup': 'squeeze', 'Yellow Mustard': 'squeeze', 'Clover Honey': 'squeeze',
+  'Hand Lotion': 'pump', 'Maple Syrup': 'syrup', 'Pain Reliever': 'pillBottle', 'Deodorant': 'deodorant',
+  'Sparkling Water': 'sodaCan', 'Energy Drink': 'sodaCan',
+  'Scrub Sponges': 'sponge', 'Scrub Brush': 'brush', 'Rawhide Bones': 'bone', 'Chew Toys': 'ringToy',
 };
 
 const BY_SHAPE = {
@@ -39,7 +45,8 @@ export const modelKey = (p) => BY_NAME[p.name] || BY_SHAPE[p.shapeKey] || 'box';
 
 // Fresh food (no package) needs no label texture.
 const NO_LABEL = new Set(['apple', 'orange', 'citrus', 'tomato', 'potato', 'onion', 'avocado', 'peach', 'melon', 'banana',
-  'loaf', 'buns', 'croissant', 'muffin', 'chicken', 'deli', 'cheese', 'tortilla', 'meat', 'water6']);
+  'loaf', 'buns', 'croissant', 'muffin', 'chicken', 'deli', 'cheese', 'tortilla', 'meat', 'water6',
+  'sponge', 'brush', 'bone', 'ringToy']);
 export const hasLabel = (p) => !NO_LABEL.has(modelKey(p));
 
 // ---------- helpers ----------
@@ -309,6 +316,107 @@ const B = {
   },
   plates: (w, h, d) => [part(cyl(w / 2, w / 2, h, 20), C(0xf6f6f0)), part(sleeve(w / 2 * 1.02, h * 0.5, 20), null, true)],
 
+  // ---- packages with a real shape ----
+  spray(w, h, d, c) {
+    const r = w / 2, y0 = -h / 2, white = C(0xf4f4f4);
+    return [
+      part(at(lathe([[0, 0], [r * 0.9, 0], [r, h * 0.05], [r, h * 0.5], [r * 0.5, h * 0.62], [r * 0.3, h * 0.7]], 14), 0, y0, 0), shade(c, 0.05)),
+      part(at(sleeve(r * 1.01, h * 0.32), 0, y0 + h * 0.3, 0), null, true),
+      part(at(cyl(r * 0.3, r * 0.3, h * 0.1, 8), 0, y0 + h * 0.74, 0), white),
+      part(at(box(r * 0.7, h * 0.12, r * 1.5), 0, y0 + h * 0.86, r * 0.2), white),
+      part(at(box(r * 0.25, h * 0.14, r * 0.2), 0, y0 + h * 0.73, r * 0.6), C(0xd8d8d8)),
+      part(at(cyl(r * 0.12, r * 0.12, r * 0.25, 6).rotateX(Math.PI / 2), 0, y0 + h * 0.88, r * 0.98), shade(c, -0.2)),
+    ];
+  },
+  squeeze(w, h, d, c) {
+    const r = w / 2, y0 = -h / 2, white = C(0xf4f4f4);
+    return [
+      part(at(lathe([[0, 0], [r * 0.85, 0], [r, h * 0.06], [r * 0.96, h * 0.62], [r * 0.6, h * 0.74], [r * 0.5, h * 0.78]], 14), 0, y0, 0), c),
+      part(at(sleeve(r * 1.01, h * 0.34), 0, y0 + h * 0.34, 0), null, true),
+      part(at(cyl(r * 0.52, r * 0.55, h * 0.06, 10), 0, y0 + h * 0.81, 0), white),
+      part(at(cyl(r * 0.08, r * 0.4, h * 0.16, 10), 0, y0 + h * 0.92, 0), white),
+    ];
+  },
+  pump(w, h, d, c) {
+    const r = w / 2, y0 = -h / 2, white = C(0xf4f4f4);
+    return [
+      part(at(lathe([[0, 0], [r * 0.92, 0], [r, h * 0.05], [r, h * 0.58], [r * 0.8, h * 0.68], [r * 0.3, h * 0.72]], 14), 0, y0, 0), shade(c, 0.03)),
+      part(at(sleeve(r * 1.01, h * 0.36), 0, y0 + h * 0.32, 0), null, true),
+      part(at(cyl(r * 0.34, r * 0.34, h * 0.07, 8), 0, y0 + h * 0.75, 0), white),
+      part(at(cyl(r * 0.1, r * 0.1, h * 0.14, 6), 0, y0 + h * 0.85, 0), white),
+      part(at(box(r * 0.4, h * 0.05, r * 1.3), 0, y0 + h * 0.95, r * 0.35), white),
+    ];
+  },
+  syrup(w, h, d, c) {
+    const r = w / 2, y0 = -h / 2;
+    return [
+      part(at(lathe([[0, 0], [r * 0.9, 0], [r, h * 0.05], [r, h * 0.5], [r * 0.55, h * 0.68], [r * 0.4, h * 0.86]], 14), 0, y0, 0), c),
+      part(at(sleeve(r * 1.01, h * 0.32), 0, y0 + h * 0.3, 0), null, true),
+      part(at(new THREE.TorusGeometry(r * 0.3, r * 0.09, 5, 10).rotateY(Math.PI / 2), -r * 0.62, y0 + h * 0.72, 0), c),
+      part(at(cyl(r * 0.45, r * 0.45, h * 0.12, 10), 0, h / 2 - h * 0.06, 0), C(0xd4a017)),
+    ];
+  },
+  pillBottle(w, h, d, c) {
+    const r = w / 2;
+    return [
+      part(at(cyl(r * 0.92, r * 0.92, h * 0.74, 12), 0, -h * 0.13, 0), C(0xe8842a)),
+      part(at(sleeve(r * 0.95, h * 0.5), 0, -h * 0.15, 0), null, true),
+      part(at(cyl(r, r, h * 0.26, 14), 0, h * 0.37, 0), C(0xf6f6f6)),
+    ];
+  },
+  deodorant(w, h, d, c) {
+    const r = w / 2, k = 0.7;
+    return [
+      part(at(cyl(r, r, h * 0.6, 14).scale(1, 1, k), 0, -h * 0.12, 0), c),
+      part(at(sleeve(r * 1.02, h * 0.36).scale(1, 1, k), 0, -h * 0.1, 0), null, true),
+      part(at(cyl(r, r, h * 0.08, 14).scale(1, 1, k), 0, -h * 0.46, 0), shade(c, -0.12)),
+      part(at(sphere(r, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, (h * 0.32) / r, k), 0, h * 0.18, 0), C(0xe8eef8)),
+    ];
+  },
+  sodaCan(w, h, d) {
+    const r = w / 2;
+    return [
+      part(sleeve(r, h * 0.8), null, true),
+      part(at(cyl(r * 0.8, r, h * 0.08), 0, h * 0.44, 0), SILVER),
+      part(at(cyl(r * 0.8, r * 0.8, h * 0.02), 0, h * 0.49, 0), shade(SILVER, -0.1)),
+      part(at(cyl(r, r * 0.82, h * 0.1), 0, -h * 0.45, 0), SILVER),
+      part(at(box(r * 0.3, h * 0.012, r * 0.6), 0, h * 0.503, r * 0.2), shade(SILVER, -0.25)),
+    ];
+  },
+
+  // ---- things sold without a box ----
+  sponge(w, h, d) {
+    const parts = [
+      part(at(box(w, h, d * 0.68), 0, 0, -d * 0.16), C(0xf2d21a)),
+      part(at(box(w, h, d * 0.3), 0, 0, d * 0.35), C(0x3a9a4a)),
+    ];
+    return parts;
+  },
+  brush(w, h, d) {
+    const parts = [part(at(box(w * 0.9, h * 0.96, d * 0.38), 0, 0, -d * 0.31), C(0xc8863a))];
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 6; j++) {
+      parts.push(part(at(box(w * 0.14, h * 0.1, d * 0.6), (i - 1.5) * w * 0.2, (j - 2.5) * h * 0.145, d * 0.18), C(0xf4f4f0)));
+    }
+    return parts;
+  },
+  bone(w, h, d) {
+    const cream = C(0xf0e2c2), k = Math.min(w * 0.24, d * 0.5);
+    const parts = [part(cyl(k * 0.62, k * 0.62, h * 0.72, 10), cream)];
+    for (const sy of [-1, 1]) for (const sx of [-1, 1]) parts.push(part(at(sphere(k, 10, 8), sx * k * 0.75, sy * (h / 2 - k), 0), cream));
+    // rawhide knot wraps
+    for (const y of [-0.12, 0.12]) parts.push(part(at(new THREE.TorusGeometry(k * 0.66, k * 0.14, 5, 12).rotateX(Math.PI / 2), 0, y * h, 0), C(0xd8c098)));
+    return parts;
+  },
+  ringToy(w, h, d, c) {
+    const tube = d * 0.45, R0 = w / 2 - tube;
+    const parts = [part(new THREE.TorusGeometry(R0, tube, 8, 18), c)];
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      parts.push(part(at(sphere(tube * 0.42, 6, 5), Math.cos(a) * (R0 + tube * 0.75), Math.sin(a) * (R0 + tube * 0.75), 0), shade(c, -0.15)));
+    }
+    return parts;
+  },
+
   // ---- fresh food: just the food, no packaging ----
   loaf(w, h, d, c) {
     const crust = c;
@@ -395,6 +503,27 @@ const B = {
         parts.push(part(jitter(cyl(1, 1, 1, 12).scale(w * 0.23, h * 0.8, d * 0.44), 0.12, rand).translate(x * w, 0, 0), c));
         parts.push(part(at(box(w * 0.05, h * 0.82, d * 0.36), x * w + w * 0.13, 0, 0), C(0xf5ecdf)));
       }
+    } else if (style === 'links') {
+      // sausage links, lying along the longest side of the package
+      if (w >= h) {
+        const r = Math.min(h / 2, d / 4) * 0.95;
+        for (const z of [-1, 1]) parts.push(part(at(new THREE.CapsuleGeometry(r, w * 0.96 - r * 2, 4, 10).rotateZ(Math.PI / 2), 0, -h / 2 + r, z * d / 4), z > 0 ? c : shade(c, -0.05)));
+      } else {
+        const r = Math.min(w / 6, d / 2) * 0.95;
+        for (let i = 0; i < 3; i++) parts.push(part(at(new THREE.CapsuleGeometry(r, h * 0.96 - r * 2, 4, 10), (i - 1) * w / 3, 0, 0), i % 2 ? shade(c, -0.05) : c));
+      }
+    } else if (style === 'bacon') {
+      // four wavy strips with a fat stripe down each
+      const n = 4, segs = 8, fat = C(0xf3d2c2);
+      for (let i = 0; i < n; i++) {
+        const x = (i - (n - 1) / 2) * w / n;
+        for (let j = 0; j < segs; j++) {
+          const z = (j - (segs - 1) / 2) * (d * 0.94 / segs);
+          const y = -h / 2 + h * 0.3 + Math.sin(j * 1.6 + i) * h * 0.14;
+          parts.push(part(at(box(w / n * 0.86, h * 0.36, d * 0.96 / segs), x, y, z), c));
+          parts.push(part(at(box(w / n * 0.22, h * 0.37, d * 0.96 / segs), x + w / n * 0.12, y + h * 0.01, z), fat));
+        }
+      }
     } else if (style === 'fillet') {
       parts.push(part(jitter(box(w * 0.92, h * 0.85, d * 0.66, 4, 1, 3), 0.05, rand), c));
       for (let i = 0; i < 5; i++) parts.push(part(at(box(0.005, h * 0.86, d * 0.64).rotateY(0.25), (i - 2) * w * 0.17, 0, 0), C(0xf8d2b8)));
@@ -418,7 +547,7 @@ export function buildModel(p) {
   const h = p.shape.kind === 'box' ? s[1] : p.shape.kind === 'cyl' ? s[1] : s[0] * 2;
   const d = p.shape.kind === 'box' ? s[2] : s[0] * 2;
   // models without per-product colors or randomness can be shared
-  const shareKey = ['box', 'can', 'water6', 'tp', 'plates', 'cups'].includes(name) ? `${name}|${p.shapeKey}` : null;
+  const shareKey = ['box', 'can', 'sodaCan', 'water6', 'tp', 'plates', 'cups'].includes(name) ? `${name}|${p.shapeKey}` : null;
   if (shareKey && cache.has(shareKey)) return cache.get(shareKey);
   const parts = (B[name] || B.box)(w, h, d, C(p.color), p, rng(p.id + 1), style);
   const geo = mergeGeometries(parts, false);

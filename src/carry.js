@@ -4,6 +4,7 @@ import { drawSlotTag } from './textures.js';
 import { TOTAL_ITEMS } from './catalog.js';
 import { sfx } from './audio.js';
 import { keyLabel } from './settings.js';
+import { icon } from './hud.js';
 
 const _o = new THREE.Vector3();
 const _d = new THREE.Vector3();
@@ -91,18 +92,18 @@ export class Carry {
     if (!t) return this.hud.setAim('', '');
     if (t.type === 'item') {
       const full = this.hand.length >= eff.carry && !this.cartAccepts();
-      this.hud.setAim(t.item.p.name, full ? '<span class="warn">Hands full</span>' : `${lmb} Grab`);
+      this.hud.setAim(icon(t.item.p) + t.item.p.name, full ? '<span class="warn">Hands full</span>' : `${lmb} Grab`);
     } else if (t.type === 'slot') {
       const p = t.slot.product;
       const n = this.matching(p).length;
       const done = p.placed >= p.count;
-      this.hud.setAim(`${p.name} <span class="count${done ? ' done' : ''}">${p.placed}/${p.count}</span>`,
+      this.hud.setAim(`${icon(p)}${p.name} <span class="count${done ? ' done' : ''}">${p.placed}/${p.count}</span>`,
         n ? `${lmb} Stock ${n}` : done ? '<span class="ok">Full</span>' : '');
     } else if (t.type === 'gm') {
       this.hud.setAim('Dale', `${k('interact')} Upgrades`);
     } else if (t.type === 'peer') {
       const sel = this.selected;
-      this.hud.setAim(t.peer.nameHTML, sel ? `${k('interact')} Hand over ${sel.p.name}` : 'Coworker');
+      this.hud.setAim(t.peer.nameHTML, sel ? `${k('interact')} Hand over ${icon(sel.p)}${sel.p.name}` : 'Coworker');
     } else {
       this.hud.setAim(`Cart ${this.cart.items.length}/${this.cart.cap}`, `${k('interact')} Unload hands &nbsp; ${k('cart')} Push`);
     }

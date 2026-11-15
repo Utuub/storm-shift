@@ -190,7 +190,7 @@ kbd.mouse { background: #d6e6ff; }
 .hslot { width: 34px; height: 34px; border-radius: 8px; background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.12); display: grid; place-items: center; }
 .hslot.full { background: rgba(255,255,255,0.18); border-color: var(--gold); }
 .hslot { position: relative; }
-.hslot span { width: 20px; height: 20px; border-radius: 5px; border: 2px solid rgba(0,0,0,0.35); }
+.hslot .pic { width: 30px; height: 30px; }
 .hslot em { position: absolute; left: 3px; top: 0; font: 400 10px/1.2 var(--display); font-style: normal; color: rgba(255,255,255,0.7); }
 .hslot.sel { border-color: #fff; background: rgba(255,197,61,0.45); transform: translateY(-4px) scale(1.08); box-shadow: 0 0 10px rgba(255,197,61,0.8); }
 .hand-label small { font-family: var(--body); font-size: 11px; opacity: 0.7; margin-left: 6px; }
@@ -366,3 +366,14 @@ table.results { width: 100%; border-collapse: collapse; font-size: 15px; }
   .sizes { grid-template-columns: repeat(2, 1fr); }
   #feed { right: 14px; top: 200px; }
 }
+
+/* item pictures in the HUD */
+img.pic { width: 28px; height: 28px; vertical-align: middle; margin-right: 6px; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6)); }
+.hslot img.pic { margin: 0; }
+#aim img.pic { width: 34px; height: 34px; background: rgba(255,255,255,0.92); border-radius: 50%; border: 2px solid var(--edge); padding: 1px; }
+#aim-sub img.pic { width: 22px; height: 22px; margin: 0 4px; }
+.hand-label img.pic { width: 26px; height: 26px; background: rgba(255,255,255,0.92); border-radius: 50%; padding: 1px; }
+.check-items { display: flex; flex-wrap: wrap; gap: 1px; margin: 2px 0 8px 0; }
+.check-items span { width: 19px; height: 19px; border-radius: 5px; background: rgba(255,255,255,0.85); display: grid; place-items: center; }
+.check-items span img.pic { width: 17px; height: 17px; margin: 0; filter: none; }
+.check-items span.ok { background: var(--good); opacity: 0.55; }
