@@ -643,7 +643,7 @@ export function buildStore(scene, sections) {
   dir.position.set(8, 20, cz - 6);
   dir.target.position.set(0, 0, cz);
   dir.castShadow = true;
-  dir.shadow.mapSize.set(2048, 2048);
+  dir.shadow.mapSize.set(1536, 1536);
   const sc = dir.shadow.camera;
   sc.left = -W / 2 - 4; sc.right = W / 2 + 4; sc.top = D / 2 + 4; sc.bottom = -D / 2 - 4;
   sc.near = 1; sc.far = 60;

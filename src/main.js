@@ -18,6 +18,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { loadSettings, saveSettings, DEFAULTS, ACTIONS, keyLabel } from './settings.js';
 import { readSave, writeSave, applySave, clearSave } from './save.js';
 import { Coworker } from './coworker.js';
@@ -53,14 +54,30 @@ scene.add(camera);
 
 // Post-processing (on with the Shadows setting): ambient occlusion puts soft
 // shade where shelves, items and walls meet, and bloom makes the lights glow.
-const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 }));
-composer.addPass(new RenderPass(scene, camera));
-const gtao = new GTAOPass(scene, camera, innerWidth, innerHeight);
-gtao.updateGtaoMaterial({ radius: 0.4, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: 12 });
-gtao.blendIntensity = 0.9;
-composer.addPass(gtao);
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.22, 0.55, 1.0));
-composer.addPass(new OutputPass());
+// Memory: the effect buffers are only created while the setting is on, and
+// they are plain (not multisampled) buffers with a cheap SMAA pass for smooth
+// edges. Multisampled HDR buffers cost several times more video memory.
+let composer = null;
+function setEffects(on) {
+  if (on && !composer) {
+    composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType }));
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.addPass(new RenderPass(scene, camera));
+    const gtao = new GTAOPass(scene, camera, innerWidth, innerHeight);
+    gtao.updateGtaoMaterial({ radius: 0.4, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: 12 });
+    gtao.blendIntensity = 0.9;
+    composer.addPass(gtao);
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.22, 0.55, 1.0));
+    composer.addPass(new OutputPass());
+    composer.addPass(new SMAAPass(innerWidth, innerHeight));
+    composer.setSize(innerWidth, innerHeight);
+  } else if (!on && composer) {
+    for (const p of composer.passes) p.dispose?.();
+    composer.renderTarget1.dispose();
+    composer.renderTarget2.dispose();
+    composer = null;
+  }
+}
 
 const store = buildStore(scene, SECTIONS);
 const items = new Items(scene, products);
@@ -592,13 +609,15 @@ $('options-back').addEventListener('click', () => {
 function applySettings() {
   camera.fov = settings.fov;
   camera.updateProjectionMatrix();
-  const ratio = Math.min(2, devicePixelRatio * settings.renderScale);
+  // capped at 1.5: every screen-sized buffer grows with the square of this
+  const ratio = Math.min(1.5, devicePixelRatio * settings.renderScale);
   if (renderer.getPixelRatio() !== ratio) {
     renderer.setPixelRatio(ratio);
     renderer.setSize(innerWidth, innerHeight);
-    composer.setPixelRatio(ratio);
-    composer.setSize(innerWidth, innerHeight);
+    composer?.setPixelRatio(ratio);
+    composer?.setSize(innerWidth, innerHeight);
   }
+  setEffects(settings.shadows);
   if (renderer.shadowMap.enabled !== settings.shadows || !applySettings.done) {
     renderer.shadowMap.enabled = settings.shadows;
     scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => (m.needsUpdate = true)); });
@@ -672,7 +691,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
-  composer.setSize(innerWidth, innerHeight);
+  composer?.setSize(innerWidth, innerHeight);
 });
 addEventListener('beforeunload', () => { if (!game.online && ['play', 'paused', 'menu'].includes(game.state)) writeSave(saveCtx); });
 
@@ -773,12 +792,12 @@ function frame(now) {
     gm.update(t, game.credits >= cheapestAvailable(game.owned, game.online), player.pos);
     hud.update(game, player, game.eff);
   }
-  if (settings.shadows) composer.render();
+  if (composer) composer.render();
   else renderer.render(scene, camera);
 }
 
 $('loading').hidden = true;
-if (DEBUG) window.__dbg = { player, camera, game, store, hud }; // ?debug only: lets tests move the camera
+if (DEBUG) window.__dbg = { player, camera, game, store, hud, renderer }; // ?debug only: lets tests move the camera
 refreshTitle();
 show('title');
 requestAnimationFrame(frame);

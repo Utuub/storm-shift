@@ -88,7 +88,11 @@ export function productTexture(p) {
   lines.forEach((l, i) => ctx.fillText(l, W / 2, top + i * (size + 2)));
   ctx.fillStyle = shade(p.color, -0.22);
   ctx.fillRect(0, S - 14, W, 14);
-  return tex(c);
+  const t = tex(c);
+  // The label never changes, so once it has been sent to the graphics card the
+  // canvas copy in normal memory is freed (about a quarter MB per product).
+  t.onUpdate = () => { c.width = c.height = 0; t.onUpdate = null; };
+  return t;
 }
 
 // Shelf price-tag strip. Redrawn whenever the slot count changes.
