@@ -186,21 +186,127 @@ export function ceilingTexture() {
 }
 
 export function floorTexture() {
-  const c = canvas(256, 256);
+  // Waxed vinyl tile: two close tones in a checker, speckled, with thin seams
+  // and a little wear. 4 x 4 tiles per repeat.
+  const S = 512, T = S / 4;
+  const c = canvas(S, S);
   const ctx = c.getContext('2d');
+  let seed = 7;
+  const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
   for (let y = 0; y < 4; y++) {
     for (let x = 0; x < 4; x++) {
-      ctx.fillStyle = (x + y) % 2 ? '#d9d4c7' : '#ece8dc';
-      ctx.fillRect(x * 64, y * 64, 64, 64);
+      const k = Math.round((rnd() - 0.5) * 8);
+      const base = (x + y) % 2 ? [176 + k, 171 + k, 160 + k] : [196 + k, 191 + k, 179 + k];
+      ctx.fillStyle = `rgb(${base})`;
+      ctx.fillRect(x * T, y * T, T, T);
     }
   }
-  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
-  ctx.lineWidth = 2;
+  for (let i = 0; i < 5200; i++) {
+    const v = rnd();
+    ctx.fillStyle = v < 0.5 ? `rgba(120,112,98,${0.1 + rnd() * 0.18})` : v < 0.8 ? `rgba(255,255,255,${0.25 + rnd() * 0.3})` : `rgba(150,128,96,${0.12 + rnd() * 0.15})`;
+    ctx.fillRect(rnd() * S, rnd() * S, 1 + rnd() * 2, 1 + rnd() * 2);
+  }
+  // faint scuffs
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 14; i++) {
+    ctx.strokeStyle = `rgba(70,66,60,${0.04 + rnd() * 0.05})`;
+    ctx.lineWidth = 1 + rnd() * 2;
+    const x = rnd() * S, y = rnd() * S, a = rnd() * 6.28, len = 20 + rnd() * 60;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + Math.cos(a) * len * 0.5 + 6, y + Math.sin(a) * len * 0.5 - 6, x + Math.cos(a) * len, y + Math.sin(a) * len); ctx.stroke();
+  }
+  // seams
+  ctx.strokeStyle = 'rgba(60,56,50,0.22)';
+  ctx.lineWidth = 1.5;
   for (let i = 0; i <= 4; i++) {
-    ctx.beginPath(); ctx.moveTo(i * 64, 0); ctx.lineTo(i * 64, 256); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, i * 64); ctx.lineTo(256, i * 64); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(i * T, 0); ctx.lineTo(i * T, S); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * T); ctx.lineTo(S, i * T); ctx.stroke();
   }
   const t = tex(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
   return t;
+}
+
+// Analog wall clock showing h:mm.
+export function clockTexture(h, m) {
+  const c = canvas(256, 256);
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, 256, 256);
+  ctx.fillStyle = '#1b1e24';
+  ctx.beginPath(); ctx.arc(128, 128, 126, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fbfaf4';
+  ctx.beginPath(); ctx.arc(128, 128, 112, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1b1e24';
+  ctx.font = 'bold 26px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 1; i <= 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    ctx.fillText(String(i), 128 + Math.sin(a) * 90, 128 - Math.cos(a) * 90);
+  }
+  const hand = (a, len, w, col) => {
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(128, 128); ctx.lineTo(128 + Math.sin(a) * len, 128 - Math.cos(a) * len); ctx.stroke();
+  };
+  hand(((h % 12) + m / 60) / 12 * Math.PI * 2, 56, 9, '#1b1e24');
+  hand((m / 60) * Math.PI * 2, 84, 6, '#1b1e24');
+  hand(0.9, 92, 2, '#c0392b');
+  ctx.fillStyle = '#c0392b';
+  ctx.beginPath(); ctx.arc(128, 128, 7, 0, Math.PI * 2); ctx.fill();
+  const t = tex(c);
+  return t;
+}
+
+// What you see through the front windows: a wet parking lot at night.
+export function nightTexture() {
+  const c = canvas(512, 384);
+  const ctx = c.getContext('2d');
+  const sky = ctx.createLinearGradient(0, 0, 0, 384);
+  sky.addColorStop(0, '#3a4a66');
+  sky.addColorStop(0.55, '#5a6a86');
+  sky.addColorStop(0.56, '#2a3038');
+  sky.addColorStop(1, '#4a5260');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, 512, 384);
+  // storm clouds
+  for (let i = 0; i < 26; i++) {
+    ctx.fillStyle = `rgba(20,26,40,${0.25 + (i % 5) * 0.08})`;
+    ctx.beginPath();
+    ctx.ellipse((i * 97) % 512, 20 + (i * 37) % 130, 70 + (i * 13) % 60, 22 + (i * 7) % 18, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // parking lot lamps with a glow and a streak of reflection on the wet ground
+  for (const x of [90, 300, 450]) {
+    ctx.fillStyle = '#10141c';
+    ctx.fillRect(x - 2, 110, 4, 110);
+    const g = ctx.createRadialGradient(x, 108, 2, x, 108, 60);
+    g.addColorStop(0, 'rgba(255,236,190,1)');
+    g.addColorStop(1, 'rgba(255,236,190,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x - 60, 48, 120, 120);
+    const r = ctx.createLinearGradient(0, 220, 0, 384);
+    r.addColorStop(0, 'rgba(255,236,190,0.55)');
+    r.addColorStop(1, 'rgba(255,236,190,0)');
+    ctx.fillStyle = r;
+    ctx.fillRect(x - 9, 220, 18, 164);
+  }
+  // parking lines and a couple of parked cars
+  ctx.strokeStyle = 'rgba(230,230,220,0.5)';
+  ctx.lineWidth = 3;
+  for (let x = 20; x < 512; x += 62) { ctx.beginPath(); ctx.moveTo(x, 384); ctx.lineTo(x + 26, 250); ctx.stroke(); }
+  for (const [x, col] of [[150, '#1b2230'], [370, '#2a1c1c']]) {
+    ctx.fillStyle = col;
+    ctx.fillRect(x, 204, 96, 26);
+    ctx.fillRect(x + 18, 186, 58, 20);
+    ctx.fillStyle = '#0c0f14';
+    ctx.beginPath(); ctx.arc(x + 20, 232, 9, 0, 7); ctx.arc(x + 76, 232, 9, 0, 7); ctx.fill();
+  }
+  // rain
+  ctx.strokeStyle = 'rgba(210,225,255,0.35)';
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 260; i++) {
+    const x = (i * 71) % 512, y = (i * 113) % 384;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 5, y + 16); ctx.stroke();
+  }
+  return tex(c);
 }

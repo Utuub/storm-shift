@@ -13,6 +13,11 @@ import { UpgradeMenu, effects, cheapestAvailable } from './upgrades.js';
 import { drawSlotTag } from './textures.js';
 import { initAudio, setVolumes, sfx, musicStart, musicStop, duckMusic } from './audio.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { loadSettings, saveSettings, DEFAULTS, ACTIONS, keyLabel } from './settings.js';
 import { readSave, writeSave, applySave, clearSave } from './save.js';
 import { Coworker } from './coworker.js';
@@ -32,7 +37,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false; // the shelves never move, so draw shadows once
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 0.95;
 document.body.prepend(renderer.domElement);
 const canvas = renderer.domElement;
 
@@ -41,10 +46,21 @@ scene.background = new THREE.Color(0x1d2026);
 // soft studio reflections on everything (shiny floor, cans, bottles, glass)
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.35;
+scene.environmentIntensity = 0.45;
 scene.fog = new THREE.Fog(0x2a2d33, 50, 120);
 const camera = new THREE.PerspectiveCamera(settings.fov, innerWidth / innerHeight, 0.05, 150);
 scene.add(camera);
+
+// Post-processing (on with the Shadows setting): ambient occlusion puts soft
+// shade where shelves, items and walls meet, and bloom makes the lights glow.
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 }));
+composer.addPass(new RenderPass(scene, camera));
+const gtao = new GTAOPass(scene, camera, innerWidth, innerHeight);
+gtao.updateGtaoMaterial({ radius: 0.4, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: 12 });
+gtao.blendIntensity = 0.9;
+composer.addPass(gtao);
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.22, 0.55, 1.0));
+composer.addPass(new OutputPass());
 
 const store = buildStore(scene, SECTIONS);
 const items = new Items(scene, products);
@@ -455,6 +471,21 @@ function closeShop() {
   lock();
 }
 
+// Tab: the checklist opens as a panel you can use with the mouse (scroll it,
+// click an item to track it). Tab, Esc or E closes it and takes the mouse back.
+function openList() {
+  game.state = 'list';
+  document.exitPointerLock();
+  hud.toggleChecklist(true);
+  hud.renderChecklist();
+}
+
+function closeList() {
+  hud.toggleChecklist(false);
+  game.state = 'play';
+  lock();
+}
+
 function buy(u) {
   game.credits -= u.cost;
   game.owned.add(u.id);
@@ -565,6 +596,8 @@ function applySettings() {
   if (renderer.getPixelRatio() !== ratio) {
     renderer.setPixelRatio(ratio);
     renderer.setSize(innerWidth, innerHeight);
+    composer.setPixelRatio(ratio);
+    composer.setSize(innerWidth, innerHeight);
   }
   if (renderer.shadowMap.enabled !== settings.shadows || !applySettings.done) {
     renderer.shadowMap.enabled = settings.shadows;
@@ -596,13 +629,14 @@ addEventListener('keydown', (e) => {
     return;
   }
   const st = game.state;
-  if (st === 'play' && (isBind(e, 'checklist') || e.code === 'Tab')) e.preventDefault();
+  if ((st === 'play' || st === 'list') && (isBind(e, 'checklist') || e.code === 'Tab')) e.preventDefault();
   // ignore key auto-repeat everywhere: holding a key must not double-fire
   if (e.repeat) return;
   if (e.code === 'Escape') {
     e.preventDefault();
     if (st === 'play') { document.exitPointerLock(); pause(); }        // only reaches us in fullscreen
     else if (st === 'menu') closeShop();
+    else if (st === 'list') closeList();
     else if (st === 'paused' && (!$('pause').hidden || !$('options').hidden)) {
       if (!$('options').hidden && optionsFrom !== 'pause') return show(optionsFrom);
       waitingBind = null;
@@ -611,12 +645,13 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (st === 'menu' && isBind(e, 'interact')) { closeShop(); return; }
+  if (st === 'list' && (isBind(e, 'checklist') || isBind(e, 'interact'))) { closeList(); return; }
   if (st !== 'play') return;
   if (isBind(e, 'interact')) carry.use();
   else if (isBind(e, 'drop')) carry.drop(game.eff);
   else if (/^Digit[1-9]$/.test(e.code)) carry.select(+e.code.slice(5) - 1);
   else if (isBind(e, 'cart')) carry.toggleCart();
-  else if (isBind(e, 'checklist')) { hud.toggleChecklist(); hud.renderChecklist(); }
+  else if (isBind(e, 'checklist')) openList();
   else if (DEBUG && e.code === 'F9') debugShelve();
   else if (DEBUG && e.code === 'Equal') { game.credits += 500; hud.notice('debug: +500 credits'); }
 });
@@ -637,6 +672,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
 });
 addEventListener('beforeunload', () => { if (!game.online && ['play', 'paused', 'menu'].includes(game.state)) writeSave(saveCtx); });
 
@@ -730,17 +766,19 @@ function frame(now) {
         hud.radar(-rel - Math.PI / 2, Math.hypot(dx, dz));
       } else hud.radar(null);
     } else if (!game.eff.radar) hud.radar(null);
-    if (frameN % 20 === 0) hud.renderChecklist();
     if (!game.online && game.time >= autosaveAt) { autosaveAt = game.time + 60; writeSave(saveCtx); }
   }
-  if (st === 'play' || st === 'menu' || (game.online && st === 'paused')) {
+  if (st === 'list' && frameN % 20 === 0) hud.renderChecklist();
+  if (st === 'play' || st === 'menu' || st === 'list' || (game.online && st === 'paused')) {
     gm.update(t, game.credits >= cheapestAvailable(game.owned, game.online), player.pos);
     hud.update(game, player, game.eff);
   }
-  renderer.render(scene, camera);
+  if (settings.shadows) composer.render();
+  else renderer.render(scene, camera);
 }
 
 $('loading').hidden = true;
+if (DEBUG) window.__dbg = { player, camera, game, store, hud }; // ?debug only: lets tests move the camera
 refreshTitle();
 show('title');
 requestAnimationFrame(frame);

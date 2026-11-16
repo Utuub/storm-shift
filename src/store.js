@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { addStaticBox, addSensorBox, G } from './physics.js';
-import { makeSlotTag, drawSlotTag, signTexture, floorTexture, ceilingTexture, textTexture } from './textures.js';
+import { makeSlotTag, drawSlotTag, signTexture, floorTexture, ceilingTexture, textTexture, clockTexture, nightTexture } from './textures.js';
 
 // Shelf geometry (meters)
 const GAP = 0.015;        // minimum space between items on a shelf
@@ -164,10 +164,10 @@ export function buildStore(scene, sections) {
   };
 
   const mat = {
-    wall: new THREE.MeshStandardMaterial({ color: 0xece4cf, roughness: 0.9 }),
+    wall: new THREE.MeshStandardMaterial({ color: 0xece4cf, roughness: 0.92 }),
     fixture: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff6e0, emissiveIntensity: 1.2 }),
-    window: new THREE.MeshStandardMaterial({ color: 0x0b1018, emissive: 0x1a2a40, emissiveIntensity: 0.6, roughness: 0.2 }),
-    door: new THREE.MeshStandardMaterial({ color: 0x0b1018, emissive: 0x1a2a40, emissiveIntensity: 0.5 }),
+    window: new THREE.MeshStandardMaterial({ color: 0x8e98aa, map: nightTexture(), emissive: 0x1a2a40, emissiveIntensity: 0.6, roughness: 0.15, metalness: 0.1 }),
+    door: new THREE.MeshStandardMaterial({ color: 0x0b1018, emissive: 0x1a2a40, emissiveIntensity: 0.5, roughness: 0.12, metalness: 0.2 }),
     glass: new THREE.MeshStandardMaterial({ color: 0xcfeaff, transparent: true, opacity: 0.16, roughness: 0.05, metalness: 0.2, depthWrite: false }),
     glow: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xeaf6ff, emissiveIntensity: 1.6 }),
   };
@@ -175,7 +175,7 @@ export function buildStore(scene, sections) {
   // floor, ceiling, walls
   const ftex = floorTexture();
   ftex.repeat.set(W / 2.4, D / 2.4);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ map: ftex, roughness: 0.22, metalness: 0.0 }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ map: ftex, roughness: 0.24, metalness: 0.0, envMapIntensity: 1.1 }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(0, 0, cz);
   floor.receiveShadow = true;
@@ -381,6 +381,7 @@ export function buildStore(scene, sections) {
         const width = p.count * pitch;
         const aMid = a + width / 2;
         const slot = {
+          aisle: sub === 'FRESH' ? 'along the wall' : sub,
           product: p, section: sec, tier: t, y, pitch, width, height: tier.h,
           start: run.L2W(a, 0, dMid), u: run.u.clone(), yaw: run.yaw,
           center: run.L2W(aMid, y + tier.h / 2, dMid),
@@ -471,6 +472,162 @@ export function buildStore(scene, sections) {
   wallRun('right', makeRun(new THREE.Vector3(bounds.xR - STYLES.cooler.D, 0, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(-1, 0, 0)), -sideTo, -sideFrom);
   wallRun('back', makeRun(new THREE.Vector3(0, 0, bounds.zB - STYLES.open.D), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, -1)),
     bounds.xL + 2, bounds.xR - 2);
+
+
+  // ---------- set dressing: the things that make it read as a real store ----------
+  // None of this blocks the player (except the cart corral), so gameplay is unchanged.
+  const ALU = 0x9aa4ae, DARK = 0x2b2f36;
+  const sign = (w, h, map, x, y, z, ry = 0, lit = true) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), lit ? new THREE.MeshBasicMaterial({ map }) : new THREE.MeshStandardMaterial({ map, roughness: 0.8, transparent: true, alphaTest: 0.5 }));
+    m.position.set(x, y, z);
+    m.rotation.y = ry;
+    scene.add(m);
+    return m;
+  };
+
+  // baseboards and wall pilasters
+  block(0.03, 0.16, D, bounds.xL + 0.015, 0.08, cz, 0x55606b, false);
+  block(0.03, 0.16, D, bounds.xR - 0.015, 0.08, cz, 0x55606b, false);
+  block(W, 0.16, 0.03, 0, 0.08, bounds.zF + 0.015, 0x55606b, false);
+  for (let z = bounds.zF + 5; z < bounds.zB - 2; z += 7) {
+    block(0.14, WALL_H, 0.55, bounds.xL + 0.07, WALL_H / 2, z, 0xddd4bc, false);
+    block(0.14, WALL_H, 0.55, bounds.xR - 0.07, WALL_H / 2, z, 0xddd4bc, false);
+  }
+  for (let x = bounds.xL + 6; x < bounds.xR - 3; x += 7) block(0.55, WALL_H, 0.14, x, WALL_H / 2, bounds.zB - 0.07, 0xddd4bc, false);
+  // crown strip where the walls meet the ceiling
+  block(W, 0.12, 0.06, 0, WALL_H - 0.06, bounds.zB - 0.03, 0xcfc6ae, false);
+  block(W, 0.12, 0.06, 0, WALL_H - 0.06, bounds.zF + 0.03, 0xcfc6ae, false);
+  block(0.06, 0.12, D, bounds.xL + 0.03, WALL_H - 0.06, cz, 0xcfc6ae, false);
+  block(0.06, 0.12, D, bounds.xR - 0.03, WALL_H - 0.06, cz, 0xcfc6ae, false);
+
+  // storefront: aluminum window frames, sills, door frames with push bars, floor mat
+  const zf = bounds.zF;
+  for (let x = bounds.xL + 3; x < bounds.xR - 2; x += 4.2) {
+    if (Math.abs(x) < 2.5 || x < bounds.xL + RW + 1.8) continue;
+    block(3.56, 0.08, 0.1, x, 3.04, zf + 0.05, ALU, false);
+    block(3.56, 0.08, 0.1, x, 0.56, zf + 0.05, ALU, false);
+    block(3.7, 0.05, 0.22, x, 0.5, zf + 0.11, 0xd9d2c0, false); // sill
+    for (const dx of [-1.74, -0.58, 0.58, 1.74]) block(0.07, 2.48, 0.1, x + dx, 1.8, zf + 0.05, ALU, false);
+    block(3.48, 0.05, 0.08, x, 2.3, zf + 0.04, ALU, false);
+  }
+  for (const dx of [-1.6, 0, 1.6]) block(0.1, 2.62, 0.14, dx, 1.31, zf + 0.07, ALU, false);
+  block(3.3, 0.12, 0.14, 0, 2.58, zf + 0.07, ALU, false);
+  for (const dx of [-0.8, 0.8]) {
+    block(1.3, 0.05, 0.05, dx, 1.05, zf + 0.12, 0xd0d6dc, false);            // push bar
+    block(1.42, 0.3, 0.03, dx, 0.2, zf + 0.03, 0x3a3f47, false);              // kick plate
+  }
+  block(3.4, 0.015, 1.7, 0, 0.012, zf + 0.95, 0x24272d, false);               // entry mat
+  sign(1.1, 0.42, textTexture('EXIT', { bg: '#0f6b33', fg: '#eafff0', font: 'bold 44px Arial' }), 0, 3.35, zf + 0.045);
+  block(1.2, 0.5, 0.06, 0, 3.35, zf + 0.0, 0x1b1e24, false);
+
+  // wall clock stuck at the story's time
+  sign(0.9, 0.9, clockTexture(9, 47), 4.4, 3.5, zf + 0.03, 0, false);
+
+  // cart corral left of the doors: rails and a row of nested carts
+  {
+    const cx0 = -5.2, cz0 = zf + 1.5;
+    for (const dx of [-0.55, 0.55]) {
+      block(0.05, 0.05, 2.4, cx0 + dx, 0.95, cz0, ALU, false);
+      for (const dz of [-1.15, 1.15]) block(0.05, 0.95, 0.05, cx0 + dx, 0.475, cz0 + dz, ALU, false);
+    }
+    for (let k = 0; k < 4; k++) {
+      const z = cz0 - 0.75 + k * 0.42;
+      block(0.6, 0.38, 0.8, cx0, 0.72, z, 0xb9c0c8, false);
+      block(0.56, 0.03, 0.76, cx0, 0.55, z, 0x8c949e, false);
+      block(0.62, 0.05, 0.05, cx0, 1.02, z + 0.42, 0xc0392b, false);
+      for (const dx of [-0.26, 0.26]) block(0.04, 0.5, 0.04, cx0 + dx, 0.28, z + 0.3, 0x8c949e, false);
+    }
+    addStaticBox(cx0, 0.55, cz0, 0.6, 0.55, 1.25);
+    sign(1.3, 0.33, signTexture('CARTS', '', '#1f5f3a'), cx0, 3.45, zf + 0.03);
+  }
+
+  // checkout lanes: register screen, card reader, bag stand, candy rack, lit lane number
+  for (let k = 0; k < 4; k++) {
+    const kx = PLAZA / 2 + 1.2 + k * 3.2;
+    if (kx > bounds.xR - 1.5) break;
+    block(0.92, 0.06, 2.62, kx, 0.93, -9, ALU, false);                         // counter trim
+    block(0.72, 0.012, 1.5, kx, 0.972, -8.5, 0x0a0a0a, false);                 // belt
+    block(0.3, 0.26, 0.04, kx + 0.3, 1.32, -10.0, 0x1b1e24, false);            // screen
+    block(0.26, 0.2, 0.01, kx + 0.3, 1.32, -9.975, 0x2f7fd8, false);
+    block(0.04, 0.3, 0.04, kx + 0.3, 1.1, -10.03, 0x5b6470, false);
+    block(0.12, 0.05, 0.16, kx - 0.2, 1.0, -9.9, 0x1b1e24, false);             // card reader
+    block(0.5, 0.5, 0.45, kx, 0.72, -7.45, 0x8c949e, false);                   // bag stand
+    block(0.44, 0.3, 0.3, kx, 0.95, -7.45, 0xf2efe6, false);
+    block(0.45, 1.25, 0.28, kx - 0.7, 0.625, -9.4, 0x5b6470, false);           // candy rack
+    for (let i = 0; i < 4; i++) block(0.4, 0.14, 0.3, kx - 0.7, 0.25 + i * 0.3, -9.38, [0xe84393, 0xf2c21a, 0x3a8ae8, 0xe2483d][i], false);
+    block(0.44, 0.34, 0.06, kx - 0.35, 2.6, -10.1, null, false, glow);         // lit lane light
+    sign(0.36, 0.28, textTexture(String(k + 1), { w: 64, h: 64, bg: '#1f7a45', fg: '#ffffff', font: 'bold 44px Arial' }), kx - 0.35, 2.6, -10.06, 0);
+    sign(0.36, 0.28, textTexture(String(k + 1), { w: 64, h: 64, bg: '#1f7a45', fg: '#ffffff', font: 'bold 44px Arial' }), kx - 0.35, 2.6, -10.14, Math.PI);
+  }
+
+  // gondola end caps: promo header, shelf lips and a kick base on each front end
+  const PROMO = [['SALE', 'THIS WEEK ONLY', '#c0392b'], ['NEW', 'JUST IN', '#1f5f3a'], ['2 FOR 1', 'MIX AND MATCH', '#d35400'], ['FRESH PICKS', 'STAFF FAVORITES', '#2980b9']];
+  gxs.forEach((x, g) => {
+    const H = gHeight[g];
+    const [t, sub2, col] = PROMO[g % PROMO.length];
+    sign(GW - 0.06, (GW - 0.06) / 4, signTexture(t, sub2, col), x, H - 0.16, Z0 - 0.07, Math.PI);
+    block(GW, 0.12, 0.1, x, 0.06, Z0 - 0.08, DARK, false);
+    for (let i = 1; i <= 3; i++) block(GW - 0.04, 0.03, 0.05, x, 0.12 + i * (H - 0.5) / 4, Z0 - 0.075, new THREE.Color(col).getHex(), false);
+    block(GW, 0.12, 0.1, x, 0.06, Z0 + L + 0.08, DARK, false);
+  });
+
+  // banners hanging over the main aisle
+  [['WEEKLY DEALS', 'SAVE ALL OVER THE STORE', '#c0392b', Z0 + L * 0.25], ['FRESH EVERY DAY', 'CORNER FRESH MARKET', '#1f5f3a', Z0 + L * 0.75]].forEach(([t, s2, col, z]) => {
+    const tex = signTexture(t, s2, col);
+    sign(3.2, 0.8, tex, 0, 4.0, z - 0.01, Math.PI);
+    sign(3.2, 0.8, tex, 0, 4.0, z + 0.01, 0);
+    for (const dx of [-1.4, 1.4]) block(0.02, WALL_H - 4.4, 0.02, dx, (WALL_H + 4.4) / 2, z, ALU, false);
+  });
+
+  // ceiling: light housings, air vents, security domes
+  for (const x of [...centers, -PLAZA / 4, PLAZA / 4, bounds.xL + 2.5, bounds.xR - 2.5]) {
+    block(0.44, 0.05, D - 3.8, x, WALL_H - 0.045, cz, 0xd9dbd6, false);
+  }
+  for (let x = bounds.xL + 5; x < bounds.xR - 3; x += 9) {
+    for (let z = bounds.zF + 6; z < bounds.zB - 3; z += 10) {
+      block(0.6, 0.02, 0.6, x + 1.3, WALL_H - 0.01, z, 0x5a6068, false);
+      for (let i = -2; i <= 2; i++) block(0.56, 0.025, 0.03, x + 1.3, WALL_H - 0.015, z + i * 0.11, 0xb8bec6, false);
+    }
+  }
+  for (const [x, z] of [[0, Z0 - 3], [bounds.xL + 4, cz], [bounds.xR - 4, cz], [0, Z0 + L + 2.5]]) {
+    block(0.22, 0.05, 0.22, x, WALL_H - 0.025, z, 0xe8e8e8, false);
+    block(0.14, 0.1, 0.14, x, WALL_H - 0.1, z, 0x15171b, false);
+  }
+
+  // the mop bucket and wet-floor sign from the story (you were mopping aisle 4)
+  {
+    const mx = centers[centers.length - 1] ?? 4, mz = Z0 - 1.3;
+    block(0.42, 0.34, 0.5, mx + 0.5, 0.17, mz, 0xf2c21a, false);
+    block(0.36, 0.02, 0.44, mx + 0.5, 0.33, mz, 0x6a8fa8, false);
+    block(0.035, 1.3, 0.035, mx + 0.56, 0.75, mz - 0.1, 0xb8863a, false);
+    block(0.3, 0.6, 0.04, mx - 0.4, 0.3, mz - 0.07, 0xf5d21a, false);
+    block(0.3, 0.6, 0.04, mx - 0.4, 0.3, mz + 0.07, 0xf5d21a, false);
+    const wet = textTexture('WET FLOOR', { w: 128, h: 128, bg: '#f5d21a', fg: '#1b1b1b', font: 'bold 22px Arial' });
+    sign(0.28, 0.28, wet, mx - 0.4, 0.4, mz - 0.092, Math.PI);
+    sign(0.28, 0.28, wet, mx - 0.4, 0.4, mz + 0.092, 0);
+  }
+
+  // stockroom doors on the back wall, if there is room past the meat cases
+  {
+    const free = (W - 4 - wallRuns.back.len) / 2;
+    if (free > 2.6) {
+      const dx0 = bounds.xR - 2 - free / 2 + 0.6, zb = bounds.zB;
+      for (const s of [-0.62, 0.62]) {
+        block(1.18, 2.3, 0.05, dx0 + s, 1.15, zb - 0.03, 0xb9c0c8, false);
+        block(0.34, 0.34, 0.02, dx0 + s, 1.6, zb - 0.06, 0x1a2a40, false);
+        block(1.18, 0.4, 0.02, dx0 + s, 0.25, zb - 0.06, 0x8c949e, false);
+      }
+      block(2.6, 0.12, 0.1, dx0, 2.36, zb - 0.05, ALU, false);
+      for (const s of [-1.26, 1.26]) block(0.1, 2.36, 0.1, dx0 + s, 1.18, zb - 0.05, ALU, false);
+      sign(2.2, 0.45, signTexture('EMPLOYEES ONLY', '', '#3a3f47'), dx0, 2.75, zb - 0.02, Math.PI);
+    }
+  }
+
+  // by the office: fire extinguisher and a trash can
+  block(0.14, 0.42, 0.14, ox1 + 0.6, 1.15, oz1 + WT / 2 + 0.08, 0xc8201e, false);
+  block(0.06, 0.1, 0.06, ox1 + 0.6, 1.4, oz1 + WT / 2 + 0.08, 0x1b1e24, false);
+  block(0.42, 0.75, 0.42, ox1 + 1.3, 0.375, oz1 + 0.35, 0x4a5058, false);
+  block(0.46, 0.05, 0.46, ox1 + 1.3, 0.775, oz1 + 0.35, 0x2b2f36, false);
 
   const solidMesh = new THREE.Mesh(mergeGeometries(solid), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.15 }));
   solidMesh.castShadow = true;

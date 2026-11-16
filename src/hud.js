@@ -33,6 +33,31 @@ export class HUD {
     };
     this.total = TOTAL_ITEMS;
     this.typing = null;
+    // Checklist: click an item to track it (a chip under the score shows where it goes).
+    this.tracked = null;
+    this.el.track = document.createElement('div');
+    this.el.track.id = 'track';
+    this.el.track.hidden = true;
+    this.el.root.append(this.el.track);
+    this.el.checklist.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-pid]');
+      if (!el) return;
+      const p = SECTIONS.flatMap((s) => s.list).find((x) => x.id === +el.dataset.pid);
+      this.tracked = this.tracked === p ? null : p;
+      sfx.click();
+      this.renderChecklist();
+      this.renderTrack();
+    });
+  }
+
+  // "Tracking" chip: the item you clicked in the checklist, how many are shelved, and where it goes.
+  renderTrack() {
+    const p = this.tracked;
+    this.el.track.hidden = !p;
+    if (!p) return;
+    const done = p.placed >= p.count;
+    setHTML(this.el.track, `<small>TRACKING</small>${icon(p)}<b>${p.name}</b> <span class="${done ? 'ok' : ''}">${p.placed}/${p.count}</span>`
+      + `<em>${p.section.name}${p.slot?.aisle ? ' \u00b7 ' + p.slot.aisle : ''}</em>`);
   }
 
   show(on) { this.el.root.hidden = !on; }
@@ -51,6 +76,7 @@ export class HUD {
     const sw = `${Math.round(player.stamina * 100)}%`;
     if (e.staminaFill._w !== sw) { e.staminaFill._w = sw; e.staminaFill.style.width = sw; }
     e.staminaFill.classList.toggle('low', player.stamina < 0.2);
+    if (this.tracked) this.renderTrack();
   }
 
   setAim(title, sub) {
@@ -147,14 +173,14 @@ export class HUD {
 
   renderChecklist() {
     if (this.el.checklist.hidden) return;
-    setHTML(this.el.checklist, '<h3>Store Checklist</h3>' + SECTIONS.map((s) => {
+    setHTML(this.el.checklist, '<h3>Store Checklist <small>click an item to track it \u00b7 Tab to close</small></h3><div class="check-grid">' + SECTIONS.map((s) => {
       const done = s.list.reduce((a, p) => a + p.placed, 0);
       const total = s.list.reduce((a, p) => a + p.count, 0);
-      return `<div class="check-row ${done === total ? 'done' : ''}">
+      return `<div class="check-sec"><div class="check-row ${done === total ? 'done' : ''}">
         <span class="swatch" style="background:${s.color}"></span>
         <span class="check-name">${s.name}</span><span class="check-bar"><i style="width:${(done / total) * 100}%"></i></span><span>${done}/${total}</span></div>
-        <div class="check-items">${s.list.map((p) => `<span class="${p.placed >= p.count ? 'ok' : ''}" title="${p.name} ${p.placed}/${p.count}">${icon(p)}</span>`).join('')}</div>`;
-    }).join(''));
+        <div class="check-items">${s.list.map((p) => `<span data-pid="${p.id}" class="${p.placed >= p.count ? 'ok' : ''}${p === this.tracked ? ' on' : ''}" title="${p.name} ${p.placed}/${p.count}">${icon(p)}<i>${p.placed}/${p.count}</i></span>`).join('')}</div></div>`;
+    }).join('') + '</div>');
   }
 
 
