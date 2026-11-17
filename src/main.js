@@ -82,7 +82,10 @@ function setEffects(on) {
 
 const store = buildStore(scene, SECTIONS);
 setDetail(settings.modelDetail);
+// package labels use the title font, so give it a moment to arrive first
+try { await Promise.race([document.fonts.load('30px "Lilita One"'), new Promise((r) => setTimeout(r, 2000))]); } catch {}
 const items = new Items(scene, products);
+store.fillEndcaps(products);
 const player = new Player(camera, store.spawn, settings);
 const gm = new GM(scene, store.office);
 const cart = new Cart(scene);
@@ -590,6 +593,7 @@ function rebuildModels() {
     old.add(p.geometry);
     p.geometry = buildModel(p);
     p.mesh.geometry = p.geometry;
+    for (const m of p.decor || []) m.geometry = p.geometry;
   }
   for (const g of old) g.dispose();   // anything still using one just re-uploads it
 }

@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { drawArt } from './art.js';
 
 function canvas(w, h) {
   const c = document.createElement('canvas');
@@ -32,67 +31,6 @@ function wrapLines(ctx, text, maxW) {
   }
   if (line) lines.push(line);
   return lines;
-}
-
-// Package art in x 0..224 (brand color, store brand, picture, name). x 224..256
-// stays white: model parts that aren't labels sample it (see models.js).
-export function productTexture(p) {
-  const S = 256, W = 224;
-  const c = canvas(S, S);
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, S, S);
-  const g = ctx.createLinearGradient(0, 0, 0, S);
-  g.addColorStop(0, shade(p.color, 0.1));
-  g.addColorStop(1, shade(p.color, -0.12));
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, S);
-  // diagonal stripes for some texture
-  ctx.fillStyle = 'rgba(255,255,255,0.07)';
-  for (let x = -S; x < W; x += 28) {
-    ctx.beginPath();
-    ctx.moveTo(x, S); ctx.lineTo(x + 14, S); ctx.lineTo(x + 14 + S, 0); ctx.lineTo(x + S, 0);
-    ctx.fill();
-  }
-  // store brand banner
-  ctx.fillStyle = shade(p.color, -0.22);
-  ctx.fillRect(0, 0, W, 34);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 17px Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('CORNER FRESH', W / 2, 18);
-  // picture in a white circle
-  ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.beginPath();
-  ctx.arc(W / 2, 104, 58, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = shade(p.color, -0.25);
-  ctx.lineWidth = 4;
-  ctx.stroke();
-  drawArt(ctx, p.name, W / 2, 104, 104);
-  // name plate
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  ctx.fillRect(10, 172, W - 20, 64);
-  ctx.fillStyle = '#1b1b1b';
-  let size = 26;
-  ctx.font = `bold ${size}px Arial, sans-serif`;
-  let lines = wrapLines(ctx, p.name, W - 32);
-  while ((lines.length > 2 || lines.some((l) => ctx.measureText(l).width > W - 32)) && size > 14) {
-    size -= 2;
-    ctx.font = `bold ${size}px Arial, sans-serif`;
-    lines = wrapLines(ctx, p.name, W - 32);
-  }
-  lines = lines.slice(0, 2);
-  const top = 204 - (lines.length - 1) * (size / 2 + 1);
-  lines.forEach((l, i) => ctx.fillText(l, W / 2, top + i * (size + 2)));
-  ctx.fillStyle = shade(p.color, -0.22);
-  ctx.fillRect(0, S - 14, W, 14);
-  const t = tex(c);
-  // The label never changes, so once it has been sent to the graphics card the
-  // canvas copy in normal memory is freed (about a quarter MB per product).
-  t.onUpdate = () => { c.width = c.height = 0; t.onUpdate = null; };
-  return t;
 }
 
 // Shelf price-tag strip. Redrawn whenever the slot count changes.

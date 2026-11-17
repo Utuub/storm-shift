@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { hasLabel } from './models.js';
 import { addStaticBox, addSensorBox, G } from './physics.js';
 import { makeSlotTag, drawSlotTag, signTexture, floorTexture, ceilingTexture, textTexture, clockTexture, nightTexture } from './textures.js';
 
@@ -35,6 +37,40 @@ const WALL_SECTIONS = {
   back: [['Meat & Seafood', 'open'], ['Deli', 'open']],
 };
 const BAY_GAP = 0.12;
+
+function cautionTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 512;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#f5cf14';
+  ctx.fillRect(0, 0, 256, 512);
+  ctx.fillStyle = '#16181b';
+  ctx.fillRect(0, 40, 256, 80);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#f5cf14';
+  ctx.font = 'bold 50px Arial Black, Arial, sans-serif';
+  ctx.fillText('CAUTION', 128, 82);
+  // warning triangle with the slipping person
+  ctx.fillStyle = '#16181b';
+  ctx.beginPath(); ctx.moveTo(128, 150); ctx.lineTo(228, 330); ctx.lineTo(28, 330); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#f5cf14';
+  ctx.beginPath(); ctx.moveTo(128, 175); ctx.lineTo(206, 316); ctx.lineTo(50, 316); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#16181b'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(146, 222, 11, 0, Math.PI * 2); ctx.fillStyle = '#16181b'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(140, 236); ctx.lineTo(118, 272); ctx.lineTo(96, 296); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(118, 272); ctx.lineTo(150, 286); ctx.lineTo(160, 304); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(136, 244); ctx.lineTo(110, 240); ctx.moveTo(136, 244); ctx.lineTo(164, 254); ctx.stroke();
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(70, 306); ctx.quadraticCurveTo(110, 296, 180, 306); ctx.stroke();
+  ctx.fillStyle = '#16181b';
+  ctx.font = 'bold 44px Arial Black, Arial, sans-serif';
+  ctx.fillText('WET', 128, 390);
+  ctx.fillText('FLOOR', 128, 440);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
 function bulletinTexture() {
   const c = document.createElement('canvas');
@@ -157,7 +193,10 @@ export function buildStore(scene, sections) {
     return g;
   };
   const block = (w, h, d, x, y, z, color, collide = true, into = solid) => {
-    const g = new THREE.BoxGeometry(w, h, d).toNonIndexed().translate(x, y, z);
+    // solid parts get softly rounded edges so nothing reads as a raw box
+    const m = Math.min(w, h, d);
+    const g = (into === solid && m >= 0.02 ? new RoundedBoxGeometry(w, h, d, 1, Math.min(0.014, m * 0.3)) : new THREE.BoxGeometry(w, h, d))
+      .toNonIndexed().translate(x, y, z);
     g.deleteAttribute('uv');
     into.push(into === solid ? colored(g, color) : g);
     if (collide) addStaticBox(x, y, z, w / 2, h / 2, d / 2);
@@ -562,14 +601,57 @@ export function buildStore(scene, sections) {
 
   // gondola end caps: promo header, shelf lips and a kick base on each front end
   const PROMO = [['SALE', 'THIS WEEK ONLY', '#c0392b'], ['NEW', 'JUST IN', '#1f5f3a'], ['2 FOR 1', 'MIX AND MATCH', '#d35400'], ['FRESH PICKS', 'STAFF FAVORITES', '#2980b9']];
+  // Each front end cap is a real display: 4 shelves stocked with products
+  // (decoration only, filled by fillEndcaps once the item models exist).
+  const ED = 0.4, ez0 = Z0 - 0.06, ezm = ez0 - ED / 2;
+  const endcaps = [];
   gxs.forEach((x, g) => {
     const H = gHeight[g];
     const [t, sub2, col] = PROMO[g % PROMO.length];
-    sign(GW - 0.06, (GW - 0.06) / 4, signTexture(t, sub2, col), x, H - 0.16, Z0 - 0.07, Math.PI);
-    block(GW, 0.12, 0.1, x, 0.06, Z0 - 0.08, DARK, false);
-    for (let i = 1; i <= 3; i++) block(GW - 0.04, 0.03, 0.05, x, 0.12 + i * (H - 0.5) / 4, Z0 - 0.075, new THREE.Color(col).getHex(), false);
+    const hex = new THREE.Color(col).getHex();
+    sign(GW - 0.06, (GW - 0.06) / 4, signTexture(t, sub2, col), x, H - 0.16, ez0 - 0.01, Math.PI);
+    const top = H - 0.3, levels = [];
+    for (let i = 0; i < 4; i++) levels.push(0.15 + i * (top - 0.15) / 4);
+    block(GW, 0.15, ED, x, 0.075, ezm, DARK, false);                                // kick base
+    for (const s of [-1, 1]) block(0.03, top, ED, x + s * (GW / 2 - 0.015), top / 2, ezm, 0xc9ced4, false);
+    for (const y of levels) {
+      block(GW - 0.06, 0.03, ED, x, y - 0.015, ezm, 0xd5d9de, false);              // shelf
+      block(GW - 0.06, 0.06, 0.014, x, y - 0.03, ez0 - ED - 0.007, hex, false);     // colored lip
+    }
+    block(GW, 0.03, ED, x, top + 0.015, ezm, 0xc9ced4, false);
+    addStaticBox(x, H / 2, ezm, GW / 2, H / 2, ED / 2);
+    endcaps.push({ x, levels, gap: (top - 0.15) / 4, promo: g % PROMO.length });
     block(GW, 0.12, 0.1, x, 0.06, Z0 + L + 0.08, DARK, false);
   });
+  function fillEndcaps(products) {
+    const KINDS = [['chips', 'bigbag', 'pouch', 'bag_s'], ['bottle_l', 'bottle', 'can', 'can_tall', 'carton'],
+      ['cereal', 'box_m', 'flour', 'box_s'], ['jar', 'jar_l', 'can_l', 'tub', 'tub_l', 'can']];
+    const used = new Set();
+    const q = new THREE.Quaternion(), pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), mtx = new THREE.Matrix4();
+    for (const ec of endcaps) {
+      const COLD = ['Dairy', 'Frozen', 'Meat & Seafood', 'Deli'];
+      const pool = products.filter((p) => hasLabel(p) && !COLD.includes(p.section.name) && KINDS[ec.promo].includes(p.shapeKey) && p.fp.h < ec.gap - 0.06);
+      ec.levels.forEach((y, li) => {
+        const p = pool.find((c) => !used.has(c)) ?? pool[li % pool.length];
+        if (!p) return;
+        used.add(p);
+        const nx = Math.max(1, Math.floor((GW - 0.08) / (p.fp.w + 0.01)));
+        const nz = Math.max(1, Math.min(3, Math.floor((ED - 0.03) / (p.fp.d + 0.015))));
+        const mesh = new THREE.InstancedMesh(p.geometry, p.material, nx * nz);
+        const restY = p.shape.kind === 'ball' ? p.fp.w / 2 : p.fp.h / 2;
+        let k = 0;
+        for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+          pos.set(x0(ec.x, i, nx), y + restY + 0.002, ez0 - 0.015 - (j + 0.5) * (ED - 0.03) / nz);
+          q.setFromAxisAngle(UP, Math.PI + Math.sin(k * 12.9 + li * 3.1) * 0.05);
+          mesh.setMatrixAt(k++, mtx.compose(pos, q, one));
+        }
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+        (p.decor ||= []).push(mesh);
+      });
+    }
+  }
+  const x0 = (cx, i, n) => cx - (GW - 0.08) / 2 + (i + 0.5) * (GW - 0.08) / n;
 
   // banners hanging over the main aisle
   [['WEEKLY DEALS', 'SAVE ALL OVER THE STORE', '#c0392b', Z0 + L * 0.25], ['FRESH EVERY DAY', 'CORNER FRESH MARKET', '#1f5f3a', Z0 + L * 0.75]].forEach(([t, s2, col, z]) => {
@@ -596,15 +678,90 @@ export function buildStore(scene, sections) {
 
   // the mop bucket and wet-floor sign from the story (you were mopping aisle 4)
   {
-    const mx = centers[centers.length - 1] ?? 4, mz = Z0 - 1.3;
-    block(0.42, 0.34, 0.5, mx + 0.5, 0.17, mz, 0xf2c21a, false);
-    block(0.36, 0.02, 0.44, mx + 0.5, 0.33, mz, 0x6a8fa8, false);
-    block(0.035, 1.3, 0.035, mx + 0.56, 0.75, mz - 0.1, 0xb8863a, false);
-    block(0.3, 0.6, 0.04, mx - 0.4, 0.3, mz - 0.07, 0xf5d21a, false);
-    block(0.3, 0.6, 0.04, mx - 0.4, 0.3, mz + 0.07, 0xf5d21a, false);
-    const wet = textTexture('WET FLOOR', { w: 128, h: 128, bg: '#f5d21a', fg: '#1b1b1b', font: 'bold 22px Arial' });
-    sign(0.28, 0.28, wet, mx - 0.4, 0.4, mz - 0.092, Math.PI);
-    sign(0.28, 0.28, wet, mx - 0.4, 0.4, mz + 0.092, 0);
+    const mx = (centers[centers.length - 1] ?? 4) + 0.5, mz = Z0 - 1.3;
+    const add = (geo, m, x, y, z, rx = 0, ry = 0, rz = 0) => {
+      const o = new THREE.Mesh(geo, m);
+      o.position.set(x, y, z); o.rotation.set(rx, ry, rz);
+      o.castShadow = o.receiveShadow = true;
+      scene.add(o);
+      return o;
+    };
+    const yellow = new THREE.MeshStandardMaterial({ color: 0xf2c21a, roughness: 0.38 });
+    const grey = new THREE.MeshStandardMaterial({ color: 0x5b6168, roughness: 0.5, metalness: 0.3 });
+    const black = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.7 });
+    // tapered oval bucket with a rolled rim
+    const bucket = add(new THREE.CylinderGeometry(0.24, 0.2, 0.36, 40, 1, true), yellow, mx, 0.22, mz);
+    bucket.scale.set(1, 1, 0.8);
+    bucket.material = yellow.clone(); bucket.material.side = THREE.DoubleSide;
+    add(new THREE.CylinderGeometry(0.2, 0.2, 0.02, 40), yellow, mx, 0.05, mz).scale.set(1, 1, 0.8);
+    add(new THREE.TorusGeometry(0.24, 0.014, 8, 40), yellow, mx, 0.4, mz, Math.PI / 2).scale.set(1, 0.8, 1);
+    for (const [dx, dz] of [[-0.17, -0.12], [0.17, -0.12], [-0.17, 0.12], [0.17, 0.12]]) {
+      add(new THREE.SphereGeometry(0.035, 12, 8), black, mx + dx, 0.035, mz + dz);
+    }
+    // dirty, soapy mop water: murky grey-brown, glossy, with drifting suds
+    let sd = 3;
+    const rr = () => { sd = (sd * 9301 + 49297) % 233280; return sd / 233280; };
+    const wc = document.createElement('canvas');
+    wc.width = wc.height = 256;
+    const wx = wc.getContext('2d');
+    const wg = wx.createRadialGradient(128, 128, 10, 128, 128, 128);
+    wg.addColorStop(0, '#77715c'); wg.addColorStop(1, '#4e4a3c');
+    wx.fillStyle = wg; wx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 260; i++) {
+      const a = rr() * Math.PI * 2, d = 30 + rr() * 85, x = 128 + Math.cos(a) * d, y = 128 + Math.sin(a) * d, r = 2 + rr() * 7;
+      wx.fillStyle = `rgba(235,232,220,${0.12 + rr() * 0.3})`;
+      wx.beginPath(); wx.arc(x, y, r, 0, Math.PI * 2); wx.fill();
+    }
+    const wt = new THREE.CanvasTexture(wc);
+    wt.colorSpace = THREE.SRGBColorSpace;
+    const water = new THREE.MeshPhysicalMaterial({ map: wt, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.04 });
+    add(new THREE.CircleGeometry(0.228, 40), water, mx, 0.33, mz, -Math.PI / 2).scale.set(1, 0.8, 1);
+    // wringer on the back half with its press handle
+    add(new RoundedBoxGeometry(0.3, 0.16, 0.14, 2, 0.02), grey, mx, 0.47, mz + 0.1);
+    add(new THREE.CylinderGeometry(0.014, 0.014, 0.6, 10), grey, mx + 0.13, 0.72, mz + 0.14, 0.3, 0, 0);
+    add(new THREE.CylinderGeometry(0.022, 0.022, 0.12, 10), black, mx + 0.13, 1.0, mz + 0.23, 0, 0, Math.PI / 2);
+    // mop leaning in the bucket: wood handle, metal clamp, hanging cotton strands
+    const tilt = -0.32;
+    const stick = add(new THREE.CylinderGeometry(0.014, 0.014, 1.45, 12), new THREE.MeshStandardMaterial({ color: 0xb8863a, roughness: 0.55 }),
+      mx - 0.06, 0.95, mz - 0.03 - Math.sin(-tilt) * 0.5, tilt, 0, 0.08);
+    stick.updateMatrixWorld();
+    const foot = new THREE.Vector3(0, -0.72, 0).applyMatrix4(stick.matrixWorld);
+    add(new THREE.CylinderGeometry(0.04, 0.04, 0.06, 12), grey, foot.x, foot.y, foot.z, tilt, 0, 0.08);
+    const strand = new THREE.MeshStandardMaterial({ color: 0xcfc8b6, roughness: 1 });
+    const strands = [];
+    for (let i = 0; i < 46; i++) {
+      const a = rr() * Math.PI * 2, d = rr() * 0.045, len = 0.16 + rr() * 0.1;
+      strands.push(new THREE.CylinderGeometry(0.007, 0.006, len, 5)
+        .rotateX((rr() - 0.5) * 0.5).rotateZ((rr() - 0.5) * 0.5)
+        .translate(foot.x + Math.cos(a) * d, foot.y - len / 2 + 0.01, foot.z + Math.sin(a) * d));
+    }
+    add(mergeGeometries(strands), strand, 0, 0, 0);
+    // A-frame caution sign
+    const sx = mx - 0.95, sz = mz;
+    const signMat = new THREE.MeshStandardMaterial({ map: cautionTexture(), roughness: 0.4 });
+    for (const s of [-1, 1]) {
+      const pnl = add(new THREE.BoxGeometry(0.32, 0.62, 0.012), [yellow, yellow, yellow, yellow, signMat, signMat].map((m) => m), sx, 0.3, sz + s * 0.08, -s * 0.16, s > 0 ? 0 : Math.PI, 0);
+      pnl.castShadow = true;
+    }
+    add(new THREE.BoxGeometry(0.06, 0.04, 0.06), yellow, sx, 0.62, sz);
+    // shiny wet patch on the floor around the bucket
+    // soft, uneven edge: a few overlapping blurry blobs as the alpha
+    const ac = document.createElement('canvas');
+    ac.width = ac.height = 128;
+    const ax = ac.getContext('2d');
+    ax.fillStyle = '#000'; ax.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 9; i++) {
+      const x = 40 + rr() * 48, y = 40 + rr() * 48, r = 18 + rr() * 22;
+      const gr = ax.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, 'rgba(255,255,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      ax.fillStyle = gr; ax.fillRect(0, 0, 128, 128);
+    }
+    const wet = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshPhysicalMaterial({
+      color: 0x6f726e, roughness: 0.02, clearcoat: 1, transparent: true, opacity: 0.6, alphaMap: new THREE.CanvasTexture(ac), depthWrite: false }));
+    wet.rotation.x = -Math.PI / 2;
+    wet.scale.set(1.4, 0.9, 1);
+    wet.position.set(mx - 0.4, 0.004, mz + 0.1);
+    scene.add(wet);
   }
 
   // stockroom doors on the back wall, if there is room past the meat cases
@@ -658,14 +815,14 @@ export function buildStore(scene, sections) {
 
   // navigation for the coworker: gondola footprints + walkways around them
   const nav = {
-    rects: [...gxs.map((x) => ({ x0: x - GW / 2 - 0.35, x1: x + GW / 2 + 0.35, z0: Z0 - 0.35, z1: Z0 + L + 0.35 })),
+    rects: [...gxs.map((x) => ({ x0: x - GW / 2 - 0.35, x1: x + GW / 2 + 0.35, z0: Z0 - 0.8, z1: Z0 + L + 0.35 })),
       { x0: bounds.xL - 1, x1: bounds.xL + RW + 0.4, z0: bounds.zF - 1, z1: bounds.zF + RD + 0.4 }],
     front: Z0 - 1.6,
     back: Z0 + L + 1.6,
   };
 
   return {
-    slots, bounds, L, office, heap, nav,
+    slots, bounds, L, office, heap, nav, fillEndcaps,
     spawn: new THREE.Vector3(0, 0.9, -7),
     lights: { hemi, dir, fixtureMat: mat.fixture, windowMat: mat.window, doorMat: mat.door },
   };

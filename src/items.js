@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RAPIER, world, groups, G } from './physics.js';
-import { productTexture } from './textures.js';
+import { productTexture } from './label.js';
 import { buildModel, hasLabel, finish } from './models.js';
 
 function colliderDesc(shape) {
