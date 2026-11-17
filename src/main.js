@@ -141,7 +141,16 @@ function goFullscreen() {
     .catch(() => {});
 }
 document.addEventListener('fullscreenchange', () => {
-  if (document.fullscreenElement) navigator.keyboard?.lock?.(['Escape'])?.catch?.(() => {});
+  if (!document.fullscreenElement) return;
+  navigator.keyboard?.lock?.(['Escape'])?.catch?.(() => {});
+  // Chrome can refuse the mouse grab while the screen is still switching to
+  // fullscreen (Start Shift asks for both at once). Ask again now that it's done,
+  // or the tornado ends with a "click to resume" pause.
+  if (!locked() && (game.state === 'storm' || game.state === 'play')) lock();
+});
+// Backup: any click during the tornado grabs the mouse if it isn't grabbed yet.
+document.addEventListener('mousedown', () => {
+  if (game.state === 'storm' && !locked()) lock();
 });
 
 const locked = () => document.pointerLockElement === canvas;
