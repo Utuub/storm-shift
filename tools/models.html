@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Storm Shift model viewer</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #3a3a3a; overflow: hidden; font: 12px Arial, sans-serif; }
+  #names { position: absolute; inset: 0; pointer-events: none; }
+  #names div { position: absolute; color: #fff; text-shadow: 0 1px 2px #000; transform: translateX(-50%); white-space: nowrap; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="names"></div>
+<script type="module">
+// Dev tool: every product model in a grid, lit like the store.
+// ?sec=Produce (section name, or a number) ?zoom=1.6 ?yaw=0.5 ?pitch=0.35 ?names=0
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { buildCatalog, SECTIONS } from '../src/catalog.js';
+import { buildModel, hasLabel, modelKey, finish } from '../src/models.js';
+import { productTexture } from '../src/textures.js';
+
+
+const q = new URLSearchParams(location.search);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.95;
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x555555);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.45;
+scene.add(new THREE.HemisphereLight(0xfff8ee, 0x6d6457, 1.25));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(2, 4, 3);
+scene.add(sun);
+
+let products = buildCatalog();
+const sec = q.get('sec');
+if (sec) products = products.filter((p) => p.section.name === sec || String(p.section.index) === sec);
+const filt = q.get('only');
+if (filt) products = products.filter((p) => filt.split(',').some((f) => modelKey(p).startsWith(f) || p.name === f));
+
+const cols = Math.ceil(Math.sqrt(products.length * 1.6));
+const gap = 0.42;
+const rows = Math.ceil(products.length / cols);
+const yaw = +(q.get('yaw') ?? 0.5), pitch = +(q.get('pitch') ?? 0.3);
+const plain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 });
+const labels = [];
+products.forEach((p, i) => {
+  const geo = buildModel(p);
+  const mat = hasLabel(p) ? new THREE.MeshStandardMaterial({ map: productTexture(p), vertexColors: true, ...finish(p) }) : plain;
+  const m = new THREE.Mesh(geo, mat);
+  const x = (i % cols - (cols - 1) / 2) * gap, z = (Math.floor(i / cols) - (rows - 1) / 2) * gap;
+  m.position.set(x, 0, z);
+  m.rotation.y = yaw;
+  scene.add(m);
+  labels.push([p.name, new THREE.Vector3(x, -0.2, z)]);
+});
+const span = Math.max(cols, rows) * gap;
+const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.01, 100);
+const zoom = +(q.get('zoom') ?? 1);
+const dist = span * 1.25 / zoom;
+camera.position.set(0, Math.sin(pitch) * dist, Math.cos(pitch) * dist);
+const controls = new OrbitControls(camera, renderer.domElement);
+const names = document.getElementById('names');
+const showNames = q.get('names') !== '0';
+function frame() {
+  controls.update();
+  renderer.render(scene, camera);
+  if (showNames) {
+    names.innerHTML = '';
+    for (const [n, v] of labels) {
+      const s = v.clone().project(camera);
+      const d = document.createElement('div');
+      d.textContent = n;
+      d.style.left = ((s.x + 1) / 2 * innerWidth) + 'px';
+      d.style.top = ((1 - s.y) / 2 * innerHeight) + 'px';
+      names.appendChild(d);
+    }
+  }
+  requestAnimationFrame(frame);
+}
+frame();
+window.__ready = true;
+</script>
+</body>
+</html>

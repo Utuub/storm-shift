@@ -1,22 +1,13 @@
 import * as THREE from 'three';
 import { RAPIER, world, groups, G } from './physics.js';
 import { productTexture } from './textures.js';
-import { buildModel, hasLabel, modelKey } from './models.js';
+import { buildModel, hasLabel, finish } from './models.js';
 
 function colliderDesc(shape) {
   const s = shape.size;
   if (shape.kind === 'box') return RAPIER.ColliderDesc.cuboid(s[0] / 2, s[1] / 2, s[2] / 2);
   if (shape.kind === 'cyl') return RAPIER.ColliderDesc.cylinder(s[1] / 2, s[0]);
   return RAPIER.ColliderDesc.ball(s[0]);
-}
-
-// Surface finish by package type: cans are metal, bottles are glossy, boxes are matte.
-function finish(p) {
-  const k = modelKey(p).split(':')[0];
-  if (['can', 'canLid', 'sodaCan'].includes(k)) return { roughness: 0.3, metalness: 0.45 };
-  if (['bottle', 'soda', 'flatBottle', 'jug', 'jar', 'spice', 'spray', 'squeeze', 'pump', 'syrup', 'pillBottle', 'deodorant'].includes(k)) return { roughness: 0.22, metalness: 0.05 };
-  if (['pillow'].includes(k)) return { roughness: 0.35, metalness: 0.1 };
-  return { roughness: 0.6, metalness: 0 };
 }
 
 const _m = new THREE.Matrix4();
