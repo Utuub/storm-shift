@@ -3,6 +3,7 @@ import { initPhysics, world, STEP } from './physics.js';
 import { buildCatalog, SECTIONS, TOTAL_ITEMS } from './catalog.js';
 import { buildStore } from './store.js';
 import { Items } from './items.js';
+import { buildModel, setDetail } from './models.js';
 import { Player } from './player.js';
 import { GM } from './gm.js';
 import { Cart } from './cart.js';
@@ -80,6 +81,7 @@ function setEffects(on) {
 }
 
 const store = buildStore(scene, SECTIONS);
+setDetail(settings.modelDetail);
 const items = new Items(scene, products);
 const player = new Player(camera, store.spawn, settings);
 const gm = new GM(scene, store.office);
@@ -539,6 +541,7 @@ let optionsFrom = 'pause';
 let waitingBind = null;
 const SLIDERS = {
   sensitivity: (v) => `${v.toFixed(2)}x`, fov: (v) => `${v}°`, renderScale: (v) => `${Math.round(v * 100)}%`,
+  modelDetail: (v) => (v < 0.45 ? 'Low' : v < 0.7 ? 'Medium' : v < 0.9 ? 'High' : 'Max'),
   master: (v) => `${Math.round(v * 100)}`, sfx: (v) => `${Math.round(v * 100)}`, ambient: (v) => `${Math.round(v * 100)}`, music: (v) => `${Math.round(v * 100)}`,
 };
 
@@ -568,8 +571,22 @@ function syncOptions() {
 
 const VIDEO = new Set(['fov', 'renderScale', 'shadows']);
 let saveTimer = null;
+let detailTimer = null;
+// Rebuild every product's 3D model at the new detail level. Waits for the
+// slider to stop moving, since rebuilding all 240 models takes a moment.
+function rebuildModels() {
+  setDetail(settings.modelDetail);
+  const old = new Set();
+  for (const p of products) {
+    old.add(p.geometry);
+    p.geometry = buildModel(p);
+    p.mesh.geometry = p.geometry;
+  }
+  for (const g of old) g.dispose();   // anything still using one just re-uploads it
+}
 function settingChanged(k) {
-  if (VIDEO.has(k)) applySettings();
+  if (k === 'modelDetail') { clearTimeout(detailTimer); detailTimer = setTimeout(rebuildModels, 350); }
+  else if (VIDEO.has(k)) applySettings();
   else {
     setVolumes({ master: settings.master, sfx: settings.sfx, ambient: settings.ambient, music: settings.music });
     if (k === 'showFps' && !settings.showFps) hud.fps(false);

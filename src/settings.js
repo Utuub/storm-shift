@@ -14,6 +14,7 @@ export const DEFAULTS = {
   invertY: false,
   fov: 75,
   renderScale: 1.0,
+  modelDetail: 0.55,
   shadows: true,
   showFps: false,
   fullscreen: true,

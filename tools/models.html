@@ -19,16 +19,17 @@
 <div id="names"></div>
 <script type="module">
 // Dev tool: every product model in a grid, lit like the store.
-// ?sec=Produce (section name, or a number) ?zoom=1.6 ?yaw=0.5 ?pitch=0.35 ?names=0
+// ?sec=Produce (section name, or a number) ?zoom=1.6 ?yaw=0.5 ?pitch=0.35 ?names=0 ?q=0.55 (detail)
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { buildCatalog, SECTIONS } from '../src/catalog.js';
-import { buildModel, hasLabel, modelKey, finish } from '../src/models.js';
+import { buildModel, hasLabel, modelKey, finish, setDetail } from '../src/models.js';
 import { productTexture } from '../src/textures.js';
 
 
 const q = new URLSearchParams(location.search);
+if (q.get('q')) setDetail(q.get('q'));
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 renderer.setSize(innerWidth, innerHeight);

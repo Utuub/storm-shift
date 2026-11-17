@@ -147,7 +147,9 @@ const bumpy = (g, amp, freq, seed = 0, oct = 2) => warp(g, (v) => {
 
 // Detail level: every round shape's segment count is scaled by this. 1500
 // items are drawn each frame, so this is the main speed/looks trade-off.
-const Q = 0.55;
+let Q = 0.55;
+// Item detail setting (Settings > Video). Rebuilt models use the new level.
+export function setDetail(v) { Q = Math.min(1, Math.max(0.3, +v || 0.55)); cache.clear(); }
 const q = (n, m = 2) => Math.max(m * 2, Math.round((n * Q) / m) * m);
 
 const at = (g, x = 0, y = 0, z = 0) => g.translate(x, y, z);
