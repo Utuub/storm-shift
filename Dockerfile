@@ -11,6 +11,7 @@ RUN npm ci --omit=dev
 COPY index.html style.css ./
 COPY src ./src
 COPY assets ./assets
+COPY vendor ./vendor
 COPY server ./server
 
 ENV PORT=3000

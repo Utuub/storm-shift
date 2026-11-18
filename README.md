@@ -21,7 +21,7 @@ npm install
 npm start
 ```
 
-Then open **http://localhost:3000** and click **Crew Shift**. To try it alone with two players, open the page in two browser windows side by side, give each a different name, and type the same crew code. Players on other computers on the same network open `http://<server computer's IP>:3000`. Three.js and Rapier load from the jsDelivr CDN, so the browser needs internet access.
+Then open **http://localhost:3000** and click **Crew Shift**. To try it alone with two players, open the page in two browser windows side by side, give each a different name, and type the same crew code. Players on other computers on the same network open `http://<server computer's IP>:3000`. Three.js (r169) and Rapier (0.14) are bundled in `vendor/`, so the game runs without any CDN. Only the Google fonts need internet; without it the text falls back to a system font.
 
 ## Crew Shift (Project 3 multiplayer)
 
@@ -107,6 +107,7 @@ Then open http://localhost:8310. Add `?debug` for test keys: F9 shelves everythi
 - `src/cart.js` is the shopping cart
 - `src/gm.js` + `src/upgrades.js` are Dale and his upgrade shop
 - `src/coworker.js` is Jess, the hired coworker
+- `vendor/` holds Three.js r169 (core + the addons the game uses) and Rapier 0.14, with their licenses
 - `src/art.js` draws the picture for every product (package labels and HUD icons)
 - `src/settings.js` + `src/save.js` handle settings and key binds, and save games (localStorage)
 - `src/physics.js` handles the Rapier setup, collision groups, and raycasts

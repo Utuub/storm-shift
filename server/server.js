@@ -26,6 +26,7 @@ app.get('/', (req, res) => { noCache(res); res.sendFile(path.join(ROOT, 'index.h
 app.get('/style.css', (req, res) => { noCache(res); res.sendFile(path.join(ROOT, 'style.css')); });
 app.use('/src', express.static(path.join(ROOT, 'src'), { setHeaders: noCache }));
 app.use('/assets', express.static(path.join(ROOT, 'assets'), { setHeaders: noCache }));
+app.use('/vendor', express.static(path.join(ROOT, 'vendor')));
 app.get('/health', (req, res) => res.json({ ok: true, rooms: rooms.size }));
 
 const http = createServer(app);
