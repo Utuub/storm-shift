@@ -32,8 +32,8 @@ The same tornado hits the same store for everyone, and the whole crew restocks i
 | Real-time message library + server-side JavaScript | `server/server.js` (Express + Socket.IO). The server owns the "who has which item" state, so two players can't grab the same can. Clients send their position 15 times a second and every grab, stock, throw, and hand-off as an event |
 | Docker | `Dockerfile` + `docker-compose.yml`: `docker compose up --build` serves the game and the socket server on port 3000 |
 | Interactions between players | **Bonk:** throw an item at a coworker and it knocks them dizzy for 1.6 s (stars over their head, screen shake) and knocks the item out of their hands. **Hand-off:** look at a coworker and press E to hand them the item you're holding. Thrown items physically bounce off other players. Racing for the same item: the server gives it to whoever grabbed first |
-| See other players' location and action | Each player is a 3D worker with their name tag, apron color, and face. You see them walk (leg swing), crouch, carry their stack of items, throw (overhand arm swing), push their cart, and get stunned |
-| Uploaded custom texture / avatar | In the lobby each player **uploads a face photo**. It's cropped to a square, sent through the server, and textured onto the front of their character's head for everyone. Every apron also wears the store badge texture `assets/corner-fresh-badge.png` |
+| See other players' location and action | Each player is a 3D worker with their name tag, apron color, and a drawn face. You see them walk (leg swing), crouch, carry their stack of items, throw (overhand arm swing), push their cart, and get stunned |
+| Uploaded custom texture / avatar | `assets/corner-fresh-badge.png`, a custom Corner Fresh Market store badge image, is loaded as a texture onto every crew member's apron (`src/avatars.js`), so each player's avatar wears the store's uniform. |
 | Game flow / rules updated for multiple players | Lobby with a crew code and host. The host picks the **shift size** (Rush 2 sections, Quick 5, Half 10, Full store 20) so the tornado only wrecks part of the store for shorter games. The shift ends when the crew has shelved every item (server-checked). End screen with awards: Employee of the Shift, Sharpshooter (trick shots), Team Player (hand-offs), Workplace Hazard (most bonks). Players can join a shift already in progress and get the current store state. Jess the hired coworker is turned off online since your coworkers are real. The pause menu doesn't stop the shift. When a player leaves, whatever they held drops where they stood, and the host role passes to the next player |
 
 ### How the store stays in sync
@@ -112,6 +112,6 @@ Then open http://localhost:8310. Add `?debug` for test keys: F9 shelves everythi
 - `src/physics.js` handles the Rapier setup, collision groups, and raycasts
 - `src/hud.js`, `src/audio.js`, and `src/textures.js` handle the HUD, synthesized sounds, and canvas textures
 - `src/online.js` is Crew Shift: the lobby, the Socket.IO connection, syncing items and players, bonks, hand-offs, and the leaderboard
-- `src/avatars.js` draws the other players (face photo, name tag, apron, held items, cart, animations)
+- `src/avatars.js` draws the other players (drawn face, name tag, apron, held items, cart, animations)
 - `server/server.js` is the Node.js game server (Express for files, Socket.IO for the game)
 - `assets/corner-fresh-badge.png` is the store badge texture on the crew aprons

@@ -47,23 +47,6 @@ function saveProfile(p) {
   try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch { /* storage blocked */ }
 }
 
-// Center-crop an uploaded photo to a small square JPEG for the avatar's face.
-function photoToFace(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const s = Math.min(img.width, img.height);
-      const c = document.createElement('canvas');
-      c.width = c.height = 128;
-      c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 128, 128);
-      URL.revokeObjectURL(url);
-      resolve(c.toDataURL('image/jpeg', 0.85));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('not an image')); };
-    img.src = url;
-  });
-}
 
 export class Online {
   // ctx: game objects from main.js plus a few main.js functions (see main.js)
@@ -83,7 +66,7 @@ export class Online {
     this.statsT = 0;
     this.lastStats = '';
     this.shiftSize = 'quick';
-    this.profile = { name: '', color: COLORS[0], face: null, room: 'STORE', ...loadProfile() };
+    this.profile = { name: '', color: COLORS[0], face: null, room: 'STORE', ...loadProfile(), face: null };
     this.items.onRest = (item) => this.queueRest(item);
     this.buildLobbyUI();
   }
@@ -106,17 +89,6 @@ export class Online {
       this.profile.color = b.dataset.color;
       this.renderProfile();
     });
-    $('lb-face').addEventListener('change', async (e) => {
-      const file = e.target.files?.[0];
-      e.target.value = '';
-      if (!file) return;
-      try {
-        this.profile.face = await photoToFace(file);
-        this.status('Looking good.');
-      } catch { this.status("That file isn't an image I can read.", true); }
-      this.renderProfile();
-    });
-    $('lb-face-clear').addEventListener('click', () => { sfx.click(); this.profile.face = null; this.renderProfile(); });
     $('lb-join').addEventListener('click', () => this.join());
     $('lb-back').addEventListener('click', () => { sfx.click(); this.toTitle(); });
     $('lb-leave').addEventListener('click', () => { sfx.click(); this.leave(); });
@@ -137,11 +109,6 @@ export class Online {
   renderProfile() {
     const p = this.profile;
     document.querySelectorAll('#lb-colors .swatch-btn').forEach((b) => b.classList.toggle('on', b.dataset.color === p.color));
-    const prev = $('lb-face-prev');
-    prev.style.borderColor = p.color;
-    prev.style.backgroundImage = p.face ? `url(${p.face})` : '';
-    prev.classList.toggle('empty', !p.face);
-    $('lb-face-clear').hidden = !p.face;
   }
 
   status(msg, bad = false) {
@@ -190,7 +157,7 @@ export class Online {
       this.status("Can't reach the server.", true);
     });
     socket.on('connect', () => {
-      socket.emit('join', { room, name, color: this.profile.color, face: this.profile.face }, (res) => {
+      socket.emit('join', { room, name, color: this.profile.color, face: null }, (res) => {
         this.joining = false;
         if (!res?.ok) { socket.close(); return this.status(res?.error || 'Could not join.', true); }
         this.socket = socket;
@@ -461,6 +428,7 @@ export class Online {
     this.socket.emit('release', {
       id: item.id, p: [pos.x, pos.y, pos.z].map(r3), q: [quat.x, quat.y, quat.z, quat.w].map(r3), v: [vel.x, vel.y, vel.z].map(r3),
     });
+    item.bonkLast = null;
     this.thrown.add(item);
   }
 
@@ -525,15 +493,30 @@ export class Online {
     const now = performance.now();
     const p = new THREE.Vector3();
     for (const item of this.thrown) {
-      if (item.state !== 'loose' || !item.body || now - (item.thrownAt || 0) > 3000) { this.thrown.delete(item); continue; }
+      if (item.state !== 'loose' || !item.body || now - (item.thrownAt || 0) > 3000) { this.thrown.delete(item); item.bonkLast = null; continue; }
       const v = item.body.linvel();
       if (v.x * v.x + v.y * v.y + v.z * v.z < 2.5) continue;
       const t = item.body.translation();
-      p.set(t.x, t.y, t.z);
+      // Sweep from last frame's spot to this one: a fast throw (Strong Arm, Cannon Arm)
+      // moves 10-20 cm per frame and bounces off the player's capsule before a single
+      // point check ever lands inside it, so check the whole path in 4 cm steps.
+      const last = item.bonkLast || t;
+      item.bonkLast = { x: t.x, y: t.y, z: t.z };
+      const fp = item.p.fp;
+      const r = 0.32 + Math.max(fp.w, fp.d) / 2 + 0.06; // capsule radius + item size + slack
+      const steps = Math.max(1, Math.ceil(Math.hypot(t.x - last.x, t.y - last.y, t.z - last.z) / 0.04));
       for (const a of this.peers.values()) {
-        if (a.stunned || !a.hitBy(p)) continue;
+        if (a.stunned || now - (a.lastBonkAt || 0) < 2100) continue; // server ignores bonks within 2 s
+        let hit = false;
+        for (let k = 1; k <= steps && !hit; k++) {
+          const f = k / steps;
+          p.set(last.x + (t.x - last.x) * f, last.y + (t.y - last.y) * f, last.z + (t.z - last.z) * f);
+          hit = a.hitBy(p, r);
+        }
+        if (!hit) continue;
         this.socket.emit('bonk', { target: a.id, item: item.id });
         a.stunned = true; // shows stars right away; their next update confirms
+        a.lastBonkAt = now;
         this.thrown.delete(item);
         sfx.ding(10);
         this.hud.popup('BONK!', 'good');
