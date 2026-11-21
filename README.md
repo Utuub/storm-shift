@@ -21,6 +21,8 @@ npm install
 npm start
 ```
 
+If a server from an earlier session is still running (old routes, 404s on new files), use `npm run fresh` instead: it stops whatever is on the port first, then starts.
+
 Then open **http://localhost:3000** and click **Crew Shift**. To try it alone with two players, open the page in two browser windows side by side, give each a different name, and type the same crew code. Players on other computers on the same network open `http://<server computer's IP>:3000`. Three.js (r169) and Rapier (0.14) are bundled in `vendor/`, so the game runs without any CDN. Only the Google fonts need internet; without it the text falls back to a system font.
 
 ## Crew Shift (Project 3 multiplayer)
